@@ -1,8 +1,4 @@
 <?php
-// Show errors for debugging
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
 session_start();
 include "db_connect.php";
 
@@ -10,29 +6,31 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = $_POST['username'];
     $password = $_POST['password'];
 
-    // Check if username exists
     $sql = "SELECT * FROM users WHERE username = '$username' LIMIT 1";
     $result = $conn->query($sql);
 
     if ($result->num_rows == 1) {
         $user = $result->fetch_assoc();
-
-        // Verify password
         if (password_verify($password, $user['password'])) {
-            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['user_id']  = $user['id'];
             $_SESSION['username'] = $user['username'];
-            echo "Login successful! Welcome, " . htmlspecialchars($user['username']);
+            header("Location: dashboard.php");
+            exit();
         } else {
-            echo "Incorrect password.";
+            $error = "Incorrect password.";
         }
     } else {
-        echo "Username not found.";
+        $error = "Username not found.";
     }
 }
 ?>
 
+<h2>Login</h2>
+<?php if(isset($error)) { echo "<p style='color:red;'>$error</p>"; } ?>
 <form action="login.php" method="post">
     Username: <input type="text" name="username" required><br>
     Password: <input type="password" name="password" required><br><br>
     <input type="submit" value="Login">
 </form>
+
+<p>Don't have an account? <a href="register.php">Register here</a></p>
