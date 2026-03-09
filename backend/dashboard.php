@@ -19,4 +19,6 @@ $user = $result->fetch_assoc();
 <p>Welcome, <?php echo $user['username']; ?>!</p>
 <p>Email: <?php echo $user['email']; ?></p>
 
+<a href="edit_profile.php">Edit Profile</a> |
+<a href="change_password.php">Change Password</a> |
 <a href="logout.php">Logout</a>
