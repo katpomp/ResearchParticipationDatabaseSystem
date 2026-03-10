@@ -2,6 +2,12 @@
 session_start();
 include "db_connect.php";
 
+// Already logged in → go straight to dashboard
+if (isset($_SESSION['user_id'])) {
+    header("Location: dashboard.php");
+    exit();
+}
+
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = $_POST['username'];
     $password = $_POST['password'];
@@ -24,9 +30,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 }
 ?>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Login</title>
+</head>
+<body>
+<?php include "inc_nav_dashboard.php"; ?>
 <h2>Login</h2>
-<?php if(isset($error)) { echo "<p style='color:red;'>$error</p>"; } ?>
+<?php if(isset($error)) { echo "<p style='color:red;'>" . htmlspecialchars($error) . "</p>"; } ?>
 <form action="login.php" method="post">
     Username: <input type="text" name="username" required><br>
     Password: <input type="password" name="password" required><br><br>
@@ -34,3 +47,5 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 </form>
 
 <p>Don't have an account? <a href="register.php">Register here</a></p>
+</body>
+</html>

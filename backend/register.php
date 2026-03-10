@@ -11,16 +11,23 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             VALUES ('$username', '$email', '$password')";
 
     if ($conn->query($sql) === TRUE) {
-        // Redirect to login page after successful registration
         header("Location: login.php");
         exit();
     } else {
-        echo "Error: " . $conn->error;
+        $reg_error = "Error: " . $conn->error;
     }
 }
 ?>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Register</title>
+</head>
+<body>
+<?php include "inc_nav_dashboard.php"; ?>
 <h2>Register</h2>
+<?php if (!empty($reg_error)) { echo "<p style='color:red;'>" . htmlspecialchars($reg_error) . "</p>"; } ?>
 <form action="register.php" method="post">
   Username: <input type="text" name="username" required><br>
   Email: <input type="email" name="email" required><br>
@@ -29,3 +36,5 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 </form>
 
 <p>Already have an account? <a href="login.php">Login here</a></p>
+</body>
+</html>

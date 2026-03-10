@@ -11,7 +11,14 @@ $sql = "SELECT users.id, users.username, credits.total_credits, credits.last_upd
 
 $result = $conn->query($sql);
 ?>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Student Credits</title>
+</head>
+<body>
+<?php include "inc_nav_dashboard.php"; ?>
 <h2>Student Credits</h2>
 <table border="1" cellpadding="5" cellspacing="0">
     <tr>
@@ -23,7 +30,7 @@ $result = $conn->query($sql);
 <?php
 if ($result->num_rows > 0) {
     while($row = $result->fetch_assoc()) {
-        $credits = $row['total_credits'] ?? 0; // default to 0 if null
+        $credits = $row['total_credits'] ?? 0;
         echo "<tr>
                 <td>{$row['id']}</td>
                 <td>{$row['username']}</td>
@@ -37,4 +44,6 @@ if ($result->num_rows > 0) {
 ?>
 </table>
 
-<p><a href="log_participation.php">Log Participation</a></p>
+<p><a href="log_participation.php">Log Participation</a> · <a href="dashboard.php">Dashboard</a></p>
+</body>
+</html>

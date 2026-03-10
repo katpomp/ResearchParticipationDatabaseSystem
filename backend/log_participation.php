@@ -14,14 +14,22 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             VALUES ('$studentID', '$eventName', '$eventDate', '$creditsEarned')";
 
     if ($conn->query($sql) === TRUE) {
-        echo "Participation logged successfully!";
+        $msg = "Participation logged successfully!";
     } else {
-        echo "Error: " . $conn->error;
+        $msg = "Error: " . $conn->error;
     }
 }
 ?>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Log Participation</title>
+</head>
+<body>
+<?php include "inc_nav_dashboard.php"; ?>
 <h2>Log Participation</h2>
+<?php if (!empty($msg)) { echo "<p>" . htmlspecialchars($msg) . "</p>"; } ?>
 <form action="log_participation.php" method="post">
     Student ID: <input type="number" name="StudentID" required><br>
     Event Name: <input type="text" name="EventName" required><br>
@@ -30,4 +38,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <input type="submit" value="Log Participation">
 </form>
 
-<p><a href="view_credits.php">View Student Credits</a></p>
+<p><a href="view_credits.php">View Student Credits</a> · <a href="dashboard.php">Dashboard</a></p>
+</body>
+</html>
