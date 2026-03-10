@@ -14,6 +14,7 @@ $result = $conn->query($sql);
         <th>Start Date</th>
         <th>End Date</th>
         <th>Researcher ID</th>
+        <th>Actions</th>
     </tr>
 <?php
 if ($result->num_rows > 0) {
@@ -25,10 +26,14 @@ if ($result->num_rows > 0) {
                 <td>{$row['StartDate']}</td>
                 <td>{$row['EndDate']}</td>
                 <td>{$row['ResearcherID']}</td>
+                <td>
+                    <a href='edit_study.php?StudyID={$row['StudyID']}'>Edit</a> |
+                    <a href='delete_study.php?StudyID={$row['StudyID']}' onclick=\"return confirm('Are you sure you want to delete this study?');\">Delete</a>
+                </td>
               </tr>";
     }
 } else {
-    echo "<tr><td colspan='6'>No studies found</td></tr>";
+    echo "<tr><td colspan='7'>No studies found</td></tr>";
 }
 ?>
 </table>
