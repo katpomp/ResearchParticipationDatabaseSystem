@@ -6,15 +6,38 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = $_POST['username'];
     $email    = $_POST['email'];
     $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+	$role = $_POST['role'];
+	$firstName = $_POST['FirstName'];
+	$lastName  = $_POST['LastName'];
+    
+    $check = $conn->query("SELECT * FROM users WHERE email='$email'");
+	if ($check->num_rows > 0) {
+    	$reg_error = "Email already exists.";
+	} else {
+    	$sql = "INSERT INTO users (username, email, password, role) 
+            VALUES ('$username', '$email', '$password', '$role')";
 
-    $sql = "INSERT INTO users (username, email, password) 
-            VALUES ('$username', '$email', '$password')";
-
-    if ($conn->query($sql) === TRUE) {
-        header("Location: login.php");
-        exit();
-    } else {
-        $reg_error = "Error: " . $conn->error;
+    	if ($conn->query($sql) === TRUE) {
+    	
+    		$userID = $conn->insert_id;
+    		if ($role == "student") {
+    			$conn->query("INSERT INTO Student (FirstName, LastName, Email, UserID) 
+    				VALUES ('$firstName', '$lastName', '$email','$userID')");
+    		}
+    		elseif ($role == "researcher") {
+            	$conn->query("INSERT INTO Researcher (FirstName, LastName, Email, UserID) 
+    				VALUES ('$firstName', '$lastName', '$email','$userID')");
+        	}
+        	elseif ($role == "faculty") {
+            	$conn->query("INSERT INTO Faculty (FirstName, LastName, Email, UserID) 
+    				VALUES ('$firstName', '$lastName', '$email','$userID')");
+        	}
+        
+        	header("Location: login.php");
+        	exit();
+    	} else {
+        	$reg_error = "Error: " . $conn->error;
+    	}
     }
 }
 ?>
@@ -30,7 +53,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <?php if (!empty($reg_error)) { echo "<p style='color:red;'>" . htmlspecialchars($reg_error) . "</p>"; } ?>
 <form action="register.php" method="post">
   Username: <input type="text" name="username" required><br>
+  First Name: <input type="text" name="FirstName" required><br>
+  Last Name: <input type="text" name="LastName" required><br>
   Email: <input type="email" name="email" required><br>
+  Role:
+  <select name="role" required>
+  	<option value="">--Select Role--</option>
+  	<option value="student">Student</option>
+  	<option value="researcher">Researcher</option>
+  	<option value="faculty">Faculty</option>
+  </select><br>
   Password: <input type="password" name="password" required><br><br>
   <input type="submit" value="Register">
 </form>

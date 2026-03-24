@@ -2,7 +2,7 @@
 session_start();
 include "db_connect.php";
 
-// Already logged in → go straight to dashboard
+// if already logged in → go straight to dashboard
 if (isset($_SESSION['user_id'])) {
     header("Location: dashboard.php");
     exit();
@@ -11,6 +11,7 @@ if (isset($_SESSION['user_id'])) {
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = $_POST['username'];
     $password = $_POST['password'];
+    
 
     $sql = "SELECT * FROM users WHERE username = '$username' LIMIT 1";
     $result = $conn->query($sql);
@@ -18,8 +19,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if ($result->num_rows == 1) {
         $user = $result->fetch_assoc();
         if (password_verify($password, $user['password'])) {
-            $_SESSION['user_id']  = $user['id'];
+            $_SESSION['user_id'] = $user['id'];
             $_SESSION['username'] = $user['username'];
+            $_SESSION['role'] = $user['role'];
             header("Location: dashboard.php");
             exit();
         } else {
