@@ -21,6 +21,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $_SESSION['email'] = $user['email'];
             $_SESSION['role'] = $user['role'];
             header("Location: dashboard.php");
+            if ($user['role'] == 'student') {
+        		header("Location: student_dashboard.php");
+    		} elseif ($user['role'] == 'researcher') {
+        		header("Location: researcher_dashboard.php");
+    		} elseif ($user['role'] == 'faculty') {
+        		header("Location: faculty_dashboard.php");
+    		} else {
+        		header("Location: dashboard.php"); // fallback
+    		}
             exit();
         } else {
             $error = "Incorrect password.";
