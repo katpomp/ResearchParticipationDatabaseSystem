@@ -1,16 +1,20 @@
 <?php
 session_start();
-session_unset();
+$_SESSION = [];
+
+if (ini_get('session.use_cookies')) {
+    $params = session_get_cookie_params();
+    setcookie(
+        session_name(),
+        '',
+        time() - 42000,
+        $params['path'],
+        $params['domain'],
+        $params['secure'],
+        $params['httponly']
+    );
+}
+
 session_destroy();
-?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Logged out</title>
-</head>
-<body>
-<p>You have been logged out.</p>
-<p><a href="login.php">Login again</a> · <a href="register.php">Register</a></p>
-</body>
-</html>
+header("Location: login.php?logged_out=1");
+exit();

@@ -7,6 +7,8 @@ if (isset($_SESSION['user_id'])) {
     exit();
 }
 
+$loggedOut = isset($_GET['logged_out']) && $_GET['logged_out'] === '1';
+
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $email = $_POST['email'];
     $password = $_POST['password'];
@@ -169,6 +171,17 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             border: 1px solid #f8b4b4;
         }
 
+        .success-msg {
+            background-color: #dff0d8;
+            color: #3c763d;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            text-align: center;
+            border: 1px solid #b7dfb9;
+        }
+
         .footer-links {
             text-align: center;
             margin-top: 1.5rem;
@@ -198,6 +211,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         
         <?php if(isset($error)): ?>
             <div class="error-msg"><?php echo htmlspecialchars($error); ?></div>
+        <?php endif; ?>
+        <?php if($loggedOut): ?>
+            <div class="success-msg">You have been logged out successfully.</div>
         <?php endif; ?>
 
         <form action="login.php" method="post">
