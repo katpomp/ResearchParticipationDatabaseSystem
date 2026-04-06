@@ -6,21 +6,30 @@ $isFacultyCreator = isset($_SESSION['user_id']) && (($_SESSION['role'] ?? '') ==
 $reg_error = '';
 $reg_success = '';
 
+$conn->query("
+    CREATE TABLE IF NOT EXISTS RoleRequest (
+        RequestID INT AUTO_INCREMENT PRIMARY KEY,
+        UserID INT NOT NULL,
+        FirstName VARCHAR(50) NOT NULL,
+        LastName VARCHAR(50) NOT NULL,
+        Email VARCHAR(100) NOT NULL,
+        RequestedRole VARCHAR(20) NOT NULL,
+        Status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        ReviewedByUserID INT NULL,
+        ReviewedAt DATETIME NULL,
+        CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_user_request (UserID),
+        FOREIGN KEY (UserID) REFERENCES users(id)
+    )
+");
+
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $email = trim($_POST['email'] ?? '');
     $plainPassword = $_POST['password'] ?? '';
     $firstName = trim($_POST['FirstName'] ?? '');
     $lastName = trim($_POST['LastName'] ?? '');
 
-    // Public signup defaults to student; faculty can explicitly assign role.
-    $allowedRoles = ['student', 'researcher', 'faculty'];
     $role = 'student';
-    if ($isFacultyCreator) {
-        $requestedRole = $_POST['role'] ?? 'student';
-        if (in_array($requestedRole, $allowedRoles, true)) {
-            $role = $requestedRole;
-        }
-    }
 
     if ($firstName === '' || $lastName === '' || $email === '' || $plainPassword === '') {
         $reg_error = "All fields are required.";
@@ -50,14 +59,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             }
 
             $userID = $conn->insert_id;
-            if ($role === 'student') {
-                $profileStmt = $conn->prepare("INSERT INTO Student (FirstName, LastName, Email, UserID) VALUES (?, ?, ?, ?)");
-            } elseif ($role === 'researcher') {
-                $profileStmt = $conn->prepare("INSERT INTO Researcher (FirstName, LastName, Email, UserID) VALUES (?, ?, ?, ?)");
-            } else {
-                $profileStmt = $conn->prepare("INSERT INTO Faculty (FirstName, LastName, Email, UserID) VALUES (?, ?, ?, ?)");
-            }
-
+            $profileStmt = $conn->prepare("INSERT INTO Student (FirstName, LastName, Email, UserID) VALUES (?, ?, ?, ?)");
             $profileStmt->bind_param("sssi", $firstName, $lastName, $email, $userID);
             if (!$profileStmt->execute()) {
                 throw new Exception($profileStmt->error);
@@ -66,7 +68,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $conn->commit();
 
             if ($isFacultyCreator) {
-                $reg_success = "Account created successfully for role: " . ucfirst($role) . ".";
+                $reg_success = "Account created successfully.";
             } else {
                 header("Location: login.php");
                 exit();
@@ -224,13 +226,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <div class="register-container">
         <div class="register-card">
             <h2>Create Account</h2>
-            <p class="subtitle">
-                <?php if ($isFacultyCreator): ?>
-                    Faculty account creation mode: you can assign roles.
-                <?php else: ?>
-                    Student self-registration.
-                <?php endif; ?>
-            </p>
+            <?php if ($isFacultyCreator): ?>
+                <p class="subtitle">Faculty account creation mode.</p>
+            <?php endif; ?>
 
             <?php if ($reg_error !== ''): ?>
                 <div class="alert alert-error"><?php echo htmlspecialchars($reg_error); ?></div>
@@ -252,17 +250,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <label for="email">Email</label>
                     <input type="email" id="email" name="email" required>
                 </div>
-
-                <?php if ($isFacultyCreator): ?>
-                    <div class="form-group">
-                        <label for="role">Role</label>
-                        <select id="role" name="role" required>
-                            <option value="student">Student</option>
-                            <option value="researcher">Researcher</option>
-                            <option value="faculty">Faculty</option>
-                        </select>
-                    </div>
-                <?php endif; ?>
 
                 <div class="form-group">
                     <label for="password">Password</label>

@@ -8,7 +8,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'faculty') {
 }
 
 $facultyID = $_SESSION['user_id'];
-$message = '';
 
 // Fetch all studies
 $studies = [];

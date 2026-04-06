@@ -8,33 +8,39 @@ if (isset($_SESSION['user_id'])) {
 }
 
 $loggedOut = isset($_GET['logged_out']) && $_GET['logged_out'] === '1';
+$pendingRequestSubmitted = isset($_GET['pending_request']) && $_GET['pending_request'] === '1';
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $email = $_POST['email'];
-    $password = $_POST['password'];
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
 
-    
-    $sql = "SELECT * FROM users WHERE email = '$email' LIMIT 1";
-    $result = $conn->query($sql);
+    $stmt = $conn->prepare("SELECT * FROM users WHERE email = ? LIMIT 1");
+    $stmt->bind_param("s", $email);
+    $stmt->execute();
+    $result = $stmt->get_result();
 
     if ($result->num_rows == 1) {
         $user = $result->fetch_assoc();
         if (password_verify($password, $user['password'])) {
-            $_SESSION['user_id'] = $user['id'];
-            $_SESSION['email'] = $user['email'];
-            $_SESSION['role'] = $user['role'];
-
-            if ($user['role'] == 'student') {
-                header("Location: student_dashboard.php");
-            } elseif ($user['role'] == 'researcher') {
-                header("Location: researcher_dashboard.php");
-            } elseif ($user['role'] == 'faculty') {
-                header("Location: faculty_dashboard.php");
+            if ($user['role'] === 'pending') {
+                $error = "Your role request is still pending faculty approval.";
             } else {
-                header("Location: dashboard.php");
-            }
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['email'] = $user['email'];
+                $_SESSION['role'] = $user['role'];
 
-            exit();
+                if ($user['role'] == 'student') {
+                    header("Location: student_dashboard.php");
+                } elseif ($user['role'] == 'researcher') {
+                    header("Location: researcher_dashboard.php");
+                } elseif ($user['role'] == 'faculty') {
+                    header("Location: faculty_dashboard.php");
+                } else {
+                    header("Location: dashboard.php");
+                }
+
+                exit();
+            }
         } else {
             $error = "Incorrect password.";
         }
@@ -214,6 +220,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         <?php endif; ?>
         <?php if($loggedOut): ?>
             <div class="success-msg">You have been logged out successfully.</div>
+        <?php endif; ?>
+        <?php if($pendingRequestSubmitted): ?>
+            <div class="success-msg">Your role request was submitted and is awaiting faculty approval.</div>
         <?php endif; ?>
 
         <form action="login.php" method="post">

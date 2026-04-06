@@ -7,15 +7,95 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'faculty') {
     exit();
 }
 
+$message = '';
+$error = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $userID = isset($_POST['user_id']) ? (int)$_POST['user_id'] : 0;
+    $fromRole = $_POST['from_role'] ?? '';
+    $toRole = $_POST['to_role'] ?? '';
+
+    $validSwitch = (
+        $userID > 0 &&
+        (($fromRole === 'student' && $toRole === 'researcher') ||
+         ($fromRole === 'researcher' && $toRole === 'student'))
+    );
+
+    if (!$validSwitch) {
+        $error = "Invalid role change request.";
+    } else {
+        $conn->begin_transaction();
+        try {
+            if ($fromRole === 'student') {
+                $sourceStmt = $conn->prepare("SELECT FirstName, LastName, Email FROM Student WHERE UserID = ? LIMIT 1");
+                $sourceStmt->bind_param("i", $userID);
+                $sourceStmt->execute();
+                $sourceRes = $sourceStmt->get_result();
+                $person = $sourceRes->fetch_assoc();
+
+                if (!$person) {
+                    throw new Exception("Student record not found.");
+                }
+
+                $insertStmt = $conn->prepare("INSERT INTO Researcher (FirstName, LastName, Email, UserID) VALUES (?, ?, ?, ?)");
+                $insertStmt->bind_param("sssi", $person['FirstName'], $person['LastName'], $person['Email'], $userID);
+                if (!$insertStmt->execute()) {
+                    throw new Exception($insertStmt->error);
+                }
+
+                $deleteStmt = $conn->prepare("DELETE FROM Student WHERE UserID = ?");
+                $deleteStmt->bind_param("i", $userID);
+                if (!$deleteStmt->execute()) {
+                    throw new Exception($deleteStmt->error);
+                }
+            } else {
+                $sourceStmt = $conn->prepare("SELECT FirstName, LastName, Email FROM Researcher WHERE UserID = ? LIMIT 1");
+                $sourceStmt->bind_param("i", $userID);
+                $sourceStmt->execute();
+                $sourceRes = $sourceStmt->get_result();
+                $person = $sourceRes->fetch_assoc();
+
+                if (!$person) {
+                    throw new Exception("Researcher record not found.");
+                }
+
+                $insertStmt = $conn->prepare("INSERT INTO Student (FirstName, LastName, Email, UserID) VALUES (?, ?, ?, ?)");
+                $insertStmt->bind_param("sssi", $person['FirstName'], $person['LastName'], $person['Email'], $userID);
+                if (!$insertStmt->execute()) {
+                    throw new Exception($insertStmt->error);
+                }
+
+                $deleteStmt = $conn->prepare("DELETE FROM Researcher WHERE UserID = ?");
+                $deleteStmt->bind_param("i", $userID);
+                if (!$deleteStmt->execute()) {
+                    throw new Exception($deleteStmt->error);
+                }
+            }
+
+            $roleStmt = $conn->prepare("UPDATE users SET role = ? WHERE id = ?");
+            $roleStmt->bind_param("si", $toRole, $userID);
+            if (!$roleStmt->execute()) {
+                throw new Exception($roleStmt->error);
+            }
+
+            $conn->commit();
+            $message = "Role updated successfully.";
+        } catch (Exception $e) {
+            $conn->rollback();
+            $error = "Could not update role. Please try again.";
+        }
+    }
+}
+
 $researchers = [];
 $students = [];
 
-$researcherRes = $conn->query("SELECT FirstName, LastName, Email FROM Researcher ORDER BY LastName ASC, FirstName ASC");
+$researcherRes = $conn->query("SELECT UserID, FirstName, LastName, Email FROM Researcher ORDER BY LastName ASC, FirstName ASC");
 while ($row = $researcherRes->fetch_assoc()) {
     $researchers[] = $row;
 }
 
-$studentRes = $conn->query("SELECT FirstName, LastName, Email FROM Student ORDER BY LastName ASC, FirstName ASC");
+$studentRes = $conn->query("SELECT UserID, FirstName, LastName, Email FROM Student ORDER BY LastName ASC, FirstName ASC");
 while ($row = $studentRes->fetch_assoc()) {
     $students[] = $row;
 }
@@ -51,6 +131,12 @@ header { background:linear-gradient(90deg, #002b55 0%, var(--cnu-blue) 100%); pa
 .person-name { font-weight:700; color:#2f3b46; }
 .person-email { color:#55626e; font-size:0.92rem; }
 .empty-note { color:#5a6673; font-style:italic; }
+.alert { margin:0 2rem; margin-top:14px; border-radius:6px; padding:10px 12px; font-size:0.92rem; }
+.alert-success { background:#e6f4ea; border:1px solid #b7dfb9; color:#2f6f39; }
+.alert-error { background:#fde8e8; border:1px solid #f8b4b4; color:#b42318; }
+.role-action { margin-top:8px; }
+.role-button { background:var(--cnu-blue); color:white; border:none; border-radius:6px; padding:7px 10px; cursor:pointer; font-weight:600; font-size:0.82rem; }
+.role-button:hover { background:#002244; }
 </style>
 </head>
 <body>
@@ -73,6 +159,12 @@ header { background:linear-gradient(90deg, #002b55 0%, var(--cnu-blue) 100%); pa
         </div>
     </div>
 </div>
+<?php if ($message !== ''): ?>
+    <div class="alert alert-success"><?php echo htmlspecialchars($message); ?></div>
+<?php endif; ?>
+<?php if ($error !== ''): ?>
+    <div class="alert alert-error"><?php echo htmlspecialchars($error); ?></div>
+<?php endif; ?>
 <div class="container">
     <div class="panel">
         <span class="panel-title">Researchers</span>
@@ -83,6 +175,12 @@ header { background:linear-gradient(90deg, #002b55 0%, var(--cnu-blue) 100%); pa
                 <div class="person-card">
                     <div class="person-name"><?php echo htmlspecialchars($researcher['FirstName'] . ' ' . $researcher['LastName']); ?></div>
                     <div class="person-email"><?php echo htmlspecialchars($researcher['Email']); ?></div>
+                    <form method="post" class="role-action">
+                        <input type="hidden" name="user_id" value="<?php echo htmlspecialchars((string)$researcher['UserID']); ?>">
+                        <input type="hidden" name="from_role" value="researcher">
+                        <input type="hidden" name="to_role" value="student">
+                        <button type="submit" class="role-button">Change to Student</button>
+                    </form>
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>
@@ -97,6 +195,12 @@ header { background:linear-gradient(90deg, #002b55 0%, var(--cnu-blue) 100%); pa
                 <div class="person-card">
                     <div class="person-name"><?php echo htmlspecialchars($student['FirstName'] . ' ' . $student['LastName']); ?></div>
                     <div class="person-email"><?php echo htmlspecialchars($student['Email']); ?></div>
+                    <form method="post" class="role-action">
+                        <input type="hidden" name="user_id" value="<?php echo htmlspecialchars((string)$student['UserID']); ?>">
+                        <input type="hidden" name="from_role" value="student">
+                        <input type="hidden" name="to_role" value="researcher">
+                        <button type="submit" class="role-button">Change to Researcher</button>
+                    </form>
                 </div>
             <?php endforeach; ?>
         <?php endif; ?>
