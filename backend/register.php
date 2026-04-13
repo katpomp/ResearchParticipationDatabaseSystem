@@ -1,10 +1,63 @@
 <?php
 session_start();
 include "db_connect.php";
+require_once __DIR__ . "/lib/PHPMailer/Exception.php";
+require_once __DIR__ . "/lib/PHPMailer/PHPMailer.php";
+require_once __DIR__ . "/lib/PHPMailer/SMTP.php";
+
+use PHPMailer\PHPMailer\Exception;
+use PHPMailer\PHPMailer\PHPMailer;
 
 $isFacultyCreator = isset($_SESSION['user_id']) && (($_SESSION['role'] ?? '') === 'faculty');
 $reg_error = '';
 $reg_success = '';
+
+$sendMailNotice = '';
+
+function sendRegistrationConfirmationEmail($toEmail, $firstName)
+{
+    $smtpUser = 'sonaproject0@gmail.com';
+    $smtpPass = 'qfow ycjn sift uydn';
+    $smtpHost = 'smtp.gmail.com';
+    $smtpPort = 587;
+    $smtpSecure = 'tls';
+
+    if (!$smtpUser || !$smtpPass) {
+        return false;
+    }
+
+    $safeName = $firstName !== '' ? $firstName : "Student";
+
+    $mail = new PHPMailer(true);
+    try {
+        $mail->isSMTP();
+        $mail->Host = $smtpHost;
+        $mail->SMTPAuth = true;
+        $mail->Username = $smtpUser;
+        $mail->Password = $smtpPass;
+        $mail->Port = $smtpPort;
+        $mail->CharSet = 'UTF-8';
+
+        if (strtolower($smtpSecure) === 'ssl') {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        } else {
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        }
+
+        $mail->setFrom($smtpUser, 'CNU Research Participation System');
+        $mail->addAddress($toEmail);
+        $mail->Subject = "CNU Research Participation - Registration Received";
+        $mail->Body = "Hello {$safeName},\n\n"
+            . "Your account registration was received successfully.\n"
+            . "You can now sign in to the CNU Research Participation System.\n\n"
+            . "If you did not create this account, please contact support.\n\n"
+            . "CNU Research Participation System";
+        $mail->send();
+        return true;
+    } catch (Exception $e) {
+        return false;
+    }
+}
 
 $conn->query("
     CREATE TABLE IF NOT EXISTS RoleRequest (
@@ -35,6 +88,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $reg_error = "All fields are required.";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $reg_error = "Please enter a valid email address.";
+    } elseif (!preg_match('/@cnu\.edu$/i', $email)) {
+        $reg_error = "Email must end with @cnu.edu.";
     } elseif (strlen($plainPassword) < 8) {
         $reg_error = "Password must be at least 8 characters.";
     } else {
@@ -66,9 +121,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             }
 
             $conn->commit();
+            $emailSent = sendRegistrationConfirmationEmail($email, $firstName);
 
             if ($isFacultyCreator) {
                 $reg_success = "Account created successfully.";
+                if (!$emailSent) {
+                    $sendMailNotice = "Account created, but confirmation email could not be sent.";
+                }
             } else {
                 header("Location: login.php");
                 exit();
@@ -236,6 +295,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <?php if ($reg_success !== ''): ?>
                 <div class="alert alert-success"><?php echo htmlspecialchars($reg_success); ?></div>
             <?php endif; ?>
+            <?php if ($sendMailNotice !== ''): ?>
+                <div class="alert alert-error"><?php echo htmlspecialchars($sendMailNotice); ?></div>
+            <?php endif; ?>
 
             <form action="register.php" method="post">
                 <div class="form-group">
@@ -248,7 +310,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 </div>
                 <div class="form-group">
                     <label for="email">Email</label>
-                    <input type="email" id="email" name="email" required>
+                    <input type="email" id="email" name="email" pattern=".+@cnu\.edu$" title="Use your @cnu.edu email address." required>
                 </div>
 
                 <div class="form-group">
