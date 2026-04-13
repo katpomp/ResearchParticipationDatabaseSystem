@@ -1,0 +1,19 @@
+<?php
+/**
+ * Copy this file to mail.local.php in the same directory and fill in your values.
+ * mail.local.php is ignored by git (see .gitignore) and blocked from the browser (.htaccess).
+ *
+ * For stronger isolation, keep secrets outside DocumentRoot and set Apache env:
+ *   SetEnv SONA_MAIL_CONFIG "/path/outside/htdocs/sona-mail-secrets.php"
+ * That file should return the same array shape as below.
+ */
+
+return [
+    'user'       => 'your-account@gmail.com',
+    'pass'       => 'your-gmail-app-password',
+    'host'       => 'smtp.gmail.com',
+    'port'       => 587,
+    'secure'     => 'tls', // 'tls' or 'ssl'
+    'from_email' => 'your-account@gmail.com', // often same as user
+    'from_name'  => 'CNU Research Participation System',
+];

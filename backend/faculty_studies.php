@@ -1,6 +1,7 @@
 <?php
 session_start();
 include "db_connect.php";
+require_once __DIR__ . '/study_participation_schema.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'faculty') {
     header("Location: login.php");
@@ -9,6 +10,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'faculty') {
 
 $message = '';
 $error = '';
+
+sona_ensure_participation_status_columns($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel_signup'])) {
     $studyID = intval($_POST['studyID'] ?? 0);
@@ -39,7 +42,8 @@ while ($row = $result->fetch_assoc()) {
 
 $signups = [];
 $stmt = $conn->prepare("
-    SELECT sp.StudyID, sp.StudentID AS StudentUserID, s.FirstName, s.LastName, s.Email
+    SELECT sp.StudyID, sp.StudentID AS StudentUserID, sp.ParticipationStatus,
+           s.FirstName, s.LastName, s.Email
     FROM StudyParticipant sp
     JOIN Student s ON sp.StudentID = s.UserID
 ");
@@ -134,7 +138,9 @@ input[type="submit"]:hover { background:#002244; }
                     <?php if (!empty($signups[$study['StudyID']])): ?>
                         <?php foreach($signups[$study['StudyID']] as $student): ?>
                             <div class="signup-row">
-                                <div class="signup-name"><?php echo htmlspecialchars($student['FirstName'] . ' ' . $student['LastName'] . ' (' . $student['Email'] . ')'); ?></div>
+                                <div class="signup-name"><?php echo htmlspecialchars($student['FirstName'] . ' ' . $student['LastName'] . ' (' . $student['Email'] . ')'); ?>
+                                    <span style="font-size:0.85rem;color:#4e5c69;"> — <?php echo htmlspecialchars($student['ParticipationStatus'] ?? 'pending'); ?></span>
+                                </div>
                                 <div class="signup-action">
                                     <form method="post">
                                         <input type="hidden" name="studyID" value="<?php echo $study['StudyID']; ?>">

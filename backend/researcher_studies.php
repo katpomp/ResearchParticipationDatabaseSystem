@@ -1,6 +1,7 @@
 <?php
 session_start();
 include "db_connect.php";
+require_once __DIR__ . '/study_participation_schema.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'researcher') {
     header("Location: login.php");
@@ -21,6 +22,8 @@ if ($researcherRow = $researcherRes->fetch_assoc()) {
 } else {
     $error = "Researcher profile not found. Please contact support.";
 }
+
+sona_ensure_participation_status_columns($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $researcherProfileID !== null) {
     $action = $_POST['action'];
@@ -84,9 +87,11 @@ header { background:linear-gradient(90deg, #002b55 0%, var(--cnu-blue) 100%); pa
 .study-date { color:#555; white-space:nowrap; }
 .study-description { margin-top:6px; color:#444; }
 .meta { margin-top:6px; color:#4e5c69; font-size:0.92rem; }
-form.study-action { text-align:center; margin-top:8px; }
+form.study-action { text-align:center; margin-top:8px; display:flex; flex-wrap:wrap; gap:10px; justify-content:center; align-items:center; }
 form input[type="submit"] { padding:6px 14px; background-color:var(--cnu-blue); color:white; border:none; border-radius:4px; cursor:pointer; }
 form input[type="submit"]:hover { background:#002244; }
+form.study-action a.attendance-link { display:inline-block; padding:6px 14px; background:#fff; color:var(--cnu-blue); border:1px solid var(--cnu-blue); border-radius:4px; text-decoration:none; font-weight:600; font-size:0.9rem; }
+form.study-action a.attendance-link:hover { background:#f0f5fa; }
 .empty-note { color:#5a6673; font-style:italic; }
 </style>
 </head>
@@ -131,9 +136,10 @@ form input[type="submit"]:hover { background:#002244; }
                     <?php endif; ?>
                     <div class="study-description"><?php echo htmlspecialchars($study['Description'] ?? ''); ?></div>
                     <form method="post" class="study-action">
+                        <a class="attendance-link" href="researcher_study_attendance.php?studyID=<?php echo (int)$study['StudyID']; ?>">Attendance &amp; completion</a>
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="studyID" value="<?php echo $study['StudyID']; ?>">
-                        <input type="submit" value="Delete Study">
+                        <input type="submit" value="Delete Study" onclick="return confirm('Delete this study and all sign-up records?');">
                     </form>
                 </div>
             <?php endforeach; ?>

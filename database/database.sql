@@ -103,6 +103,18 @@ CREATE TABLE Study (
 );
 
 
+-- STUDY PARTICIPANT (StudentID = users.id, same as Student.UserID in this app)
+CREATE TABLE StudyParticipant (
+    StudyID INT NOT NULL,
+    StudentID INT NOT NULL,
+    ParticipationStatus VARCHAR(20) NOT NULL DEFAULT 'pending',
+    CompletedAt DATETIME NULL,
+    PRIMARY KEY (StudyID, StudentID),
+    FOREIGN KEY (StudyID) REFERENCES Study(StudyID),
+    FOREIGN KEY (StudentID) REFERENCES users(id)
+);
+
+
 -- MENTOR
 CREATE TABLE Mentor (
     FacultyID INT,

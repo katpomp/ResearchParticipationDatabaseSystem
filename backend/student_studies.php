@@ -1,6 +1,7 @@
 <?php
 session_start();
 include "db_connect.php";
+require_once __DIR__ . '/study_participation_schema.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'student') {
     header("Location: login.php");
@@ -10,6 +11,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'student') {
 $studentID = $_SESSION['user_id'];
 $message = '';
 
+sona_ensure_participation_status_columns($conn);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $studyID = intval($_POST['studyID']);
     $action = $_POST['action'];
@@ -18,15 +21,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $conn->prepare("INSERT INTO StudyParticipant (StudyID, StudentID) VALUES (?, ?)");
         $stmt->bind_param("ii", $studyID, $studentID);
         if ($stmt->execute()) {
+            require_once __DIR__ . '/study_signup_notifications.php';
+            $mailResult = sona_notify_study_signup($conn, $studyID, $studentID);
             $message = "Successfully signed up for study.";
+            if (!empty($mailResult['student_send_failed'])) {
+                $message .= " We could not send a confirmation email; your sign-up is still saved—check My Schedule on the site.";
+            } elseif (!empty($mailResult['student_skipped_non_edu'])) {
+                $message .= " Add a .edu address on your profile if you want email confirmations.";
+            }
         } else {
             $message = "Error: " . $stmt->error;
         }
     } elseif ($action === 'cancel') {
-        $stmt = $conn->prepare("DELETE FROM StudyParticipant WHERE StudyID=? AND StudentID=?");
+        $stmt = $conn->prepare("DELETE FROM StudyParticipant WHERE StudyID=? AND StudentID=? AND ParticipationStatus='pending'");
         $stmt->bind_param("ii", $studyID, $studentID);
         if ($stmt->execute()) {
-            $message = "Successfully cancelled study signup.";
+            $message = $stmt->affected_rows > 0
+                ? "Successfully cancelled study signup."
+                : "You can only cancel a sign-up that is still pending.";
         } else {
             $message = "Error: " . $stmt->error;
         }
@@ -46,13 +58,13 @@ while ($row = $studyRes->fetch_assoc()) {
     $studies[] = $row;
 }
 
-$signedUp = [];
-$signedStmt = $conn->prepare("SELECT StudyID FROM StudyParticipant WHERE StudentID=?");
+$participationByStudy = [];
+$signedStmt = $conn->prepare("SELECT StudyID, ParticipationStatus FROM StudyParticipant WHERE StudentID=?");
 $signedStmt->bind_param("i", $studentID);
 $signedStmt->execute();
 $signedRes = $signedStmt->get_result();
 while ($row = $signedRes->fetch_assoc()) {
-    $signedUp[] = $row['StudyID'];
+    $participationByStudy[(int)$row['StudyID']] = $row['ParticipationStatus'] ?? 'pending';
 }
 
 $myUpcoming = [];
@@ -60,7 +72,7 @@ $myStmt = $conn->prepare("
     SELECT s.StudyID, s.StudyTitle, s.StartDate, s.EndDate
     FROM StudyParticipant sp
     JOIN Study s ON s.StudyID = sp.StudyID
-    WHERE sp.StudentID = ? AND s.StartDate >= CURDATE()
+    WHERE sp.StudentID = ? AND sp.ParticipationStatus = 'pending' AND s.StartDate >= CURDATE()
     ORDER BY s.StartDate ASC
 ");
 $myStmt->bind_param("i", $studentID);
@@ -72,10 +84,13 @@ while ($row = $myRes->fetch_assoc()) {
 
 $pastStudies = [];
 $pastStmt = $conn->prepare("
-    SELECT s.StudyID, s.StudyTitle, s.Description, s.Status, s.StartDate, s.EndDate
+    SELECT s.StudyID, s.StudyTitle, s.Description, s.Status, s.StartDate, s.EndDate, sp.ParticipationStatus
     FROM StudyParticipant sp
     JOIN Study s ON s.StudyID = sp.StudyID
-    WHERE sp.StudentID = ? AND s.StartDate < CURDATE()
+    WHERE sp.StudentID = ?
+      AND (sp.ParticipationStatus = 'completed'
+           OR sp.ParticipationStatus = 'no_show'
+           OR (sp.ParticipationStatus = 'pending' AND s.StartDate < CURDATE()))
     ORDER BY s.StartDate DESC
 ");
 $pastStmt->bind_param("i", $studentID);
@@ -261,7 +276,11 @@ form input[type="submit"]:hover { background:#002244; }
                             <div class="study-card">
                                 <div class="study-header">
                                     <div class="study-title"><?php echo htmlspecialchars($study['StudyTitle']); ?></div>
-                                    <span class="status-badge"><?php echo htmlspecialchars($study['Status'] ?? 'Completed'); ?></span>
+                                    <?php
+                                    $ps = $study['ParticipationStatus'] ?? 'pending';
+                                    $plabel = $ps === 'completed' ? 'Completed' : ($ps === 'no_show' ? 'No-show' : 'Awaiting confirmation');
+                                    ?>
+                                    <span class="status-badge"><?php echo htmlspecialchars($plabel); ?></span>
                                 </div>
                                 <div class="study-date">
                                     <?php echo htmlspecialchars(date('M j, Y', strtotime($study['StartDate']))); ?>
@@ -297,9 +316,16 @@ form input[type="submit"]:hover { background:#002244; }
                             </div>
                             <div class="study-description"><?php echo htmlspecialchars($study['Description'] ?? ''); ?></div>
 
+                            <?php
+                            $pstat = $participationByStudy[$study['StudyID']] ?? null;
+                            ?>
                             <form method="post" class="study-action">
                                 <input type="hidden" name="studyID" value="<?php echo $study['StudyID']; ?>">
-                                <?php if(in_array($study['StudyID'], $signedUp)): ?>
+                                <?php if ($pstat === 'completed'): ?>
+                                    <span class="empty-note" style="font-style:normal;font-weight:600;color:#2f6f39;">Completed — credits recorded</span>
+                                <?php elseif ($pstat === 'no_show'): ?>
+                                    <span class="empty-note" style="font-style:normal;">Recorded as no-show</span>
+                                <?php elseif ($pstat === 'pending'): ?>
                                     <input type="hidden" name="action" value="cancel">
                                     <input type="submit" value="Cancel Signup">
                                 <?php else: ?>

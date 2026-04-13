@@ -1,12 +1,7 @@
 <?php
 session_start();
 include "db_connect.php";
-require_once __DIR__ . "/lib/PHPMailer/Exception.php";
-require_once __DIR__ . "/lib/PHPMailer/PHPMailer.php";
-require_once __DIR__ . "/lib/PHPMailer/SMTP.php";
-
-use PHPMailer\PHPMailer\Exception;
-use PHPMailer\PHPMailer\PHPMailer;
+require_once __DIR__ . "/inc_smtp.php";
 
 $isFacultyCreator = isset($_SESSION['user_id']) && (($_SESSION['role'] ?? '') === 'faculty');
 $reg_error = '';
@@ -16,47 +11,13 @@ $sendMailNotice = '';
 
 function sendRegistrationConfirmationEmail($toEmail, $firstName)
 {
-    $smtpUser = 'sonaproject0@gmail.com';
-    $smtpPass = 'qfow ycjn sift uydn';
-    $smtpHost = 'smtp.gmail.com';
-    $smtpPort = 587;
-    $smtpSecure = 'tls';
-
-    if (!$smtpUser || !$smtpPass) {
-        return false;
-    }
-
     $safeName = $firstName !== '' ? $firstName : "Student";
-
-    $mail = new PHPMailer(true);
-    try {
-        $mail->isSMTP();
-        $mail->Host = $smtpHost;
-        $mail->SMTPAuth = true;
-        $mail->Username = $smtpUser;
-        $mail->Password = $smtpPass;
-        $mail->Port = $smtpPort;
-        $mail->CharSet = 'UTF-8';
-
-        if (strtolower($smtpSecure) === 'ssl') {
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-        } else {
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        }
-
-        $mail->setFrom($smtpUser, 'CNU Research Participation System');
-        $mail->addAddress($toEmail);
-        $mail->Subject = "CNU Research Participation - Registration Received";
-        $mail->Body = "Hello {$safeName},\n\n"
-            . "Your account registration was received successfully.\n"
-            . "You can now sign in to the CNU Research Participation System.\n\n"
-            . "If you did not create this account, please contact support.\n\n"
-            . "CNU Research Participation System";
-        $mail->send();
-        return true;
-    } catch (Exception $e) {
-        return false;
-    }
+    $body = "Hello {$safeName},\n\n"
+        . "Your account registration was received successfully.\n"
+        . "You can now sign in to the CNU Research Participation System.\n\n"
+        . "If you did not create this account, please contact support.\n\n"
+        . "CNU Research Participation System";
+    return sona_send_plain_email($toEmail, "CNU Research Participation - Registration Received", $body);
 }
 
 $conn->query("
@@ -79,12 +40,13 @@ $conn->query("
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $email = trim($_POST['email'] ?? '');
     $plainPassword = $_POST['password'] ?? '';
+    $confirmPassword = $_POST['password_confirm'] ?? '';
     $firstName = trim($_POST['FirstName'] ?? '');
     $lastName = trim($_POST['LastName'] ?? '');
 
     $role = 'student';
 
-    if ($firstName === '' || $lastName === '' || $email === '' || $plainPassword === '') {
+    if ($firstName === '' || $lastName === '' || $email === '' || $plainPassword === '' || $confirmPassword === '') {
         $reg_error = "All fields are required.";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $reg_error = "Please enter a valid email address.";
@@ -92,6 +54,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $reg_error = "Email must end with @cnu.edu.";
     } elseif (strlen($plainPassword) < 8) {
         $reg_error = "Password must be at least 8 characters.";
+    } elseif ($plainPassword !== $confirmPassword) {
+        $reg_error = "Passwords do not match.";
     } else {
         $password = password_hash($plainPassword, PASSWORD_DEFAULT);
         $checkStmt = $conn->prepare("SELECT id FROM users WHERE email = ? LIMIT 1");
@@ -232,6 +196,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             border-color: var(--cnu-blue);
             box-shadow: 0 0 0 2px rgba(0,51,102,0.1);
         }
+        .field-hint {
+            display: block;
+            margin-top: 0.35rem;
+            font-size: 0.85rem;
+            color: #6b7280;
+            font-weight: 400;
+        }
         .btn-submit {
             width: 100%;
             background-color: var(--cnu-blue);
@@ -315,7 +286,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
                 <div class="form-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" name="password" minlength="8" required>
+                    <input type="password" id="password" name="password" minlength="8" autocomplete="new-password" required>
+                </div>
+                <div class="form-group">
+                    <label for="password_confirm">Confirm password</label>
+                    <input type="password" id="password_confirm" name="password_confirm" minlength="8" autocomplete="new-password" required aria-describedby="password_confirm_hint">
+                    <span id="password_confirm_hint" class="field-hint">Re-enter your password to confirm.</span>
                 </div>
 
                 <button type="submit" class="btn-submit">
@@ -332,5 +308,21 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             </div>
         </div>
     </div>
+    <script>
+    (function () {
+        var pw = document.getElementById('password');
+        var cf = document.getElementById('password_confirm');
+        if (!pw || !cf) return;
+        function syncMatchValidity() {
+            if (cf.value !== '' && pw.value !== cf.value) {
+                cf.setCustomValidity('Passwords do not match.');
+            } else {
+                cf.setCustomValidity('');
+            }
+        }
+        pw.addEventListener('input', syncMatchValidity);
+        cf.addEventListener('input', syncMatchValidity);
+    })();
+    </script>
 </body>
 </html>

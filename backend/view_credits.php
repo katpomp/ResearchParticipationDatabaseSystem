@@ -1,6 +1,7 @@
 <?php
 session_start();
 include "db_connect.php";
+require_once __DIR__ . '/study_participation_schema.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'student') {
     header("Location: login.php");
@@ -9,6 +10,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'student') {
 
 $studentID = $_SESSION['user_id'];
 $requiredCredits = 22;
+
+sona_ensure_participation_status_columns($conn);
 $earnedCredits = 0;
 $pendingCredits = 0;
 $completedCredits = 0;
@@ -24,8 +27,7 @@ if ($creditsRow = $creditsRes->fetch_assoc()) {
 $pendingStmt = $conn->prepare("
     SELECT COUNT(*) AS pending_count
     FROM StudyParticipant sp
-    JOIN Study s ON s.StudyID = sp.StudyID
-    WHERE sp.StudentID = ? AND s.StartDate >= CURDATE()
+    WHERE sp.StudentID = ? AND sp.ParticipationStatus = 'pending'
 ");
 $pendingStmt->bind_param("i", $studentID);
 $pendingStmt->execute();
@@ -37,8 +39,7 @@ if ($pendingRow = $pendingRes->fetch_assoc()) {
 $completedStmt = $conn->prepare("
     SELECT COUNT(*) AS completed_count
     FROM StudyParticipant sp
-    JOIN Study s ON s.StudyID = sp.StudyID
-    WHERE sp.StudentID = ? AND s.StartDate < CURDATE()
+    WHERE sp.StudentID = ? AND sp.ParticipationStatus = 'completed'
 ");
 $completedStmt->bind_param("i", $studentID);
 $completedStmt->execute();
@@ -58,7 +59,7 @@ $pendingListStmt = $conn->prepare("
     SELECT s.StudyTitle, s.StartDate, s.EndDate, s.Description
     FROM StudyParticipant sp
     JOIN Study s ON s.StudyID = sp.StudyID
-    WHERE sp.StudentID = ? AND s.StartDate >= CURDATE()
+    WHERE sp.StudentID = ? AND sp.ParticipationStatus = 'pending'
     ORDER BY s.StartDate ASC
 ");
 $pendingListStmt->bind_param("i", $studentID);
