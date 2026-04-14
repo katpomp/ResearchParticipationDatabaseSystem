@@ -5,7 +5,7 @@ require_once __DIR__ . '/inc_smtp.php';
 /** Credits recorded in attendance / credits tables when a study is marked complete. */
 function sona_study_completion_credit_amount(): float
 {
-    return 1.0;
+    return 3.0;
 }
 
 function sona_send_study_completion_email(string $toEmail, string $firstName, string $studyTitle, float $creditsEarned): bool

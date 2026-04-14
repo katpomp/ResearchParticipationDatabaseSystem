@@ -282,6 +282,7 @@ header { background:linear-gradient(90deg, #002b55 0%, var(--cnu-blue) 100%); pa
             <?php
             $credAmt = sona_study_completion_credit_amount();
             $credLabel = rtrim(rtrim(number_format($credAmt, 2, '.', ''), '0'), '.');
+            $credWord = abs($credAmt - 1.0) < 0.0001 ? 'credit' : 'credits';
             $startFmt = date('M j, Y', strtotime($study['StartDate']));
             $endFmt = !empty($study['EndDate']) ? date('M j, Y', strtotime($study['EndDate'])) : '';
             ?>
@@ -298,7 +299,7 @@ header { background:linear-gradient(90deg, #002b55 0%, var(--cnu-blue) 100%); pa
                 <div class="legend-card legend-card-complete">
                     <div class="legend-card-inner">
                         <span class="legend-title">Mark completed</span>
-                        <span class="legend-sub"><?php echo htmlspecialchars($credLabel); ?> credit · Student email</span>
+                        <span class="legend-sub"><?php echo htmlspecialchars($credLabel . ' ' . $credWord); ?> · Student email</span>
                     </div>
                 </div>
                 <div class="legend-card legend-card-noshow">
@@ -329,7 +330,7 @@ header { background:linear-gradient(90deg, #002b55 0%, var(--cnu-blue) 100%); pa
                         </div>
                         <div class="row-actions">
                             <?php if ($st === 'pending'): ?>
-                                <form method="post" onsubmit="return confirm('Award <?php echo htmlspecialchars($credLabel); ?> credit and email this student?');">
+                                <form method="post" onsubmit="return confirm('Award <?php echo htmlspecialchars($credLabel . ' ' . $credWord); ?> and email this student?');">
                                     <input type="hidden" name="studyID" value="<?php echo (int)$study['StudyID']; ?>">
                                     <input type="hidden" name="studentUserID" value="<?php echo (int)$p['UserID']; ?>">
                                     <input type="hidden" name="attendance_action" value="complete">

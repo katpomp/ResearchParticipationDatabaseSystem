@@ -66,7 +66,7 @@ while ($row = $res->fetch_assoc()) {
 }
 
 // Credits overview metrics
-$requiredCredits = 22;
+$requiredCredits = 9;
 $earnedCredits = 0;
 $pendingCredits = 0;
 

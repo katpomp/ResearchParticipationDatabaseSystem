@@ -9,7 +9,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'student') {
 }
 
 $studentID = $_SESSION['user_id'];
-$requiredCredits = 22;
+$requiredCredits = 9;
 
 sona_ensure_participation_status_columns($conn);
 $earnedCredits = 0;
