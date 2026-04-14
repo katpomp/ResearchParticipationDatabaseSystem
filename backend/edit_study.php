@@ -70,9 +70,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $researcherProfileID !== null && $s
         } elseif ($error === '') {
             $building = trim($_POST['building_name'] ?? '');
             $room = trim($_POST['room_number'] ?? '');
-            if ($building === '' || $room === '') {
-                $error = "Building name and room number are required for in-person studies.";
-            }
         }
 
         if ($error === '') {
@@ -301,8 +298,8 @@ textarea { min-height:110px; resize:vertical; }
         var online = rOn && rOn.checked;
         if (bIn) bIn.hidden = online;
         if (bOn) bOn.hidden = !online;
-        if (building) building.required = !online;
-        if (room) room.required = !online;
+        if (building) building.required = false;
+        if (room) room.required = false;
         if (url) url.required = online;
     }
     if (rIn) rIn.addEventListener('change', sync);

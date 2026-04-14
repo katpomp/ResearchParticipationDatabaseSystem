@@ -3,6 +3,7 @@ session_start();
 include "db_connect.php";
 require_once __DIR__ . '/study_participation_schema.php';
 require_once __DIR__ . '/study_session_schema.php';
+require_once __DIR__ . '/inperson_session_schema.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'student') {
     header("Location: login.php");
@@ -14,17 +15,34 @@ $message = '';
 
 sona_ensure_participation_status_columns($conn);
 sona_ensure_study_session_columns($conn);
+sona_ensure_inperson_session_columns($conn);
+$studentPk = sona_student_primary_key_for_user($conn, (int)$studentID);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $studyID = intval($_POST['studyID']);
     $action = $_POST['action'];
 
     if ($action === 'signup') {
+        // In-person studies require selecting a time slot first.
+        $modeStmt = $conn->prepare("SELECT SessionMode FROM Study WHERE StudyID=? LIMIT 1");
+        $sessionMode = 'in_person';
+        if ($modeStmt) {
+            $modeStmt->bind_param("i", $studyID);
+            $modeStmt->execute();
+            if ($m = $modeStmt->get_result()->fetch_assoc()) {
+                $sessionMode = (($m['SessionMode'] ?? 'in_person') === 'online') ? 'online' : 'in_person';
+            }
+        }
+        if ($sessionMode !== 'online') {
+            $_SESSION['signup_study_flash'] = "This is an in-person study. Please choose a time slot to sign up.";
+            header("Location: student_study_detail.php?studyID=" . (int)$studyID);
+            exit();
+        }
         $stmt = $conn->prepare("INSERT INTO StudyParticipant (StudyID, StudentID) VALUES (?, ?)");
         $stmt->bind_param("ii", $studyID, $studentID);
         if ($stmt->execute()) {
             require_once __DIR__ . '/study_signup_notifications.php';
-            $mailResult = sona_notify_study_signup($conn, $studyID, $studentID);
+            $mailResult = sona_notify_study_signup($conn, $studyID, $studentID, null);
             $flash = "Successfully signed up for study.";
             if (!empty($mailResult['student_send_failed'])) {
                 $flash .= " We could not send a confirmation email; your sign-up is still saved.";
@@ -69,6 +87,7 @@ while ($row = $res->fetch_assoc()) {
 $requiredCredits = 9;
 $earnedCredits = 0;
 $pendingCredits = 0;
+$creditsPerStudy = 3;
 
 $creditsStmt = $conn->prepare("SELECT total_credits FROM credits WHERE user_id=?");
 $creditsStmt->bind_param("i", $studentID);
@@ -87,7 +106,7 @@ $pendingStmt->bind_param("i", $studentID);
 $pendingStmt->execute();
 $pendingRes = $pendingStmt->get_result();
 if ($pendingRow = $pendingRes->fetch_assoc()) {
-    $pendingCredits = (int)$pendingRow['pending_count'];
+    $pendingCredits = (int)$pendingRow['pending_count'] * $creditsPerStudy;
 }
 
 $progressPercent = 0;
@@ -96,22 +115,68 @@ if ($requiredCredits > 0) {
 }
 
 $events = [];
+
+// Booked pending sessions: use the student's time slot when available (in-person).
 $calendarStmt = $conn->prepare("
-    SELECT s.StudyTitle, s.StartDate
+    SELECT s.StudyID, s.StudyTitle, s.StartDate, s.SessionMode, ips.SessionDate, ips.SessionTime
     FROM StudyParticipant sp
     JOIN Study s ON s.StudyID = sp.StudyID
+    LEFT JOIN InPersonSession ips ON ips.StudyID = s.StudyID AND ips.StudentID = ?
     WHERE sp.StudentID = ? AND sp.ParticipationStatus = 'pending'
-    ORDER BY s.StartDate ASC
+    ORDER BY COALESCE(ips.SessionDate, s.StartDate) ASC, ips.SessionTime ASC
 ");
-$calendarStmt->bind_param("i", $studentID);
+$slotStudentPk = $studentPk ?? 0;
+$calendarStmt->bind_param("ii", $slotStudentPk, $studentID);
 $calendarStmt->execute();
 $calendarRes = $calendarStmt->get_result();
 while ($calendarRow = $calendarRes->fetch_assoc()) {
+    $mode = (($calendarRow['SessionMode'] ?? 'in_person') === 'online') ? 'online' : 'in_person';
+    $start = null;
+    if ($mode !== 'online' && !empty($calendarRow['SessionDate'])) {
+        $start = sona_inperson_slot_start_iso($calendarRow['SessionDate'], $calendarRow['SessionTime'] ?? null);
+    }
+    if ($start === null && !empty($calendarRow['StartDate'])) {
+        $start = $calendarRow['StartDate'];
+    }
+    if ($start === null) {
+        continue;
+    }
     $events[] = [
-        'title' => $calendarRow['StudyTitle'],
-        'start' => $calendarRow['StartDate']
+        'title' => 'My session: ' . $calendarRow['StudyTitle'],
+        'start' => $start,
+        'url' => 'student_study_detail.php?studyID=' . (int)$calendarRow['StudyID'],
+        'backgroundColor' => '#003366',
+        'borderColor' => '#002244',
     ];
 }
+
+// Open in-person time slots students can still claim.
+$openRes = $conn->query("
+    SELECT ips.SessionID, ips.SessionDate, ips.SessionTime, s.StudyTitle, s.StudyID
+    FROM InPersonSession ips
+    INNER JOIN Study s ON s.StudyID = ips.StudyID
+    WHERE (ips.StudentID IS NULL OR ips.StudentID = 0)
+      AND (ips.SessionDate >= CURDATE() OR ips.SessionDate IS NULL)
+      AND (s.SessionMode IS NULL OR LOWER(s.SessionMode) <> 'online')
+      AND s.Status = 'Open'
+    ORDER BY ips.SessionDate ASC, ips.SessionTime ASC, ips.SessionID ASC
+");
+if ($openRes) {
+    while ($openRow = $openRes->fetch_assoc()) {
+        $start = sona_inperson_slot_start_iso($openRow['SessionDate'] ?? null, $openRow['SessionTime'] ?? null);
+        if ($start === null) {
+            continue;
+        }
+        $events[] = [
+            'title' => 'Open slot: ' . $openRow['StudyTitle'],
+            'start' => $start,
+            'url' => 'student_study_detail.php?studyID=' . (int)$openRow['StudyID'],
+            'backgroundColor' => '#94a3b8',
+            'borderColor' => '#64748b',
+        ];
+    }
+}
+
 $events_json = json_encode($events);
 ?>
 
@@ -223,6 +288,24 @@ header {
 form.study-action { text-align:center; margin-top:8px; }
 form input[type="submit"] { padding:6px 14px; background-color:var(--cnu-blue); color:white; border:none; border-radius:4px; cursor:pointer; margin-top:5px;}
 form input[type="submit"]:hover { background:#002244;}
+.action-outline {
+    display:inline-block;
+    margin-right:8px;
+    padding:6px 12px;
+    background:#fff;
+    color:var(--cnu-blue);
+    border:1px solid var(--cnu-blue);
+    border-radius:4px;
+    text-decoration:none;
+    font-weight:600;
+    font-size:0.88rem;
+    line-height:1.2;
+}
+form.study-action input[type="submit"].action-outline {
+    -webkit-appearance:none;
+    appearance:none;
+}
+.action-outline:hover { background:#f0f5fa; }
 .credits-panel {
     padding:12px;
     border:1px solid #d9dfe7;
@@ -351,15 +434,15 @@ form input[type="submit"]:hover { background:#002244;}
                     <form method="post" class="study-action">
                         <input type="hidden" name="studyID" value="<?php echo $study['StudyID']; ?>">
                         <?php if ($pstat === 'completed'): ?>
-                            <a href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>" style="display:inline-block;margin-right:8px;padding:6px 12px;background:#fff;color:var(--cnu-blue);border:1px solid var(--cnu-blue);border-radius:4px;text-decoration:none;font-weight:600;font-size:0.88rem;">Study details</a>
+                            <a class="action-outline" href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>">Study details</a>
                             <span style="font-weight:600;color:#2f6f39;">Completed</span>
                         <?php elseif ($pstat === 'no_show'): ?>
-                            <a href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>" style="display:inline-block;margin-right:8px;padding:6px 12px;background:#fff;color:var(--cnu-blue);border:1px solid var(--cnu-blue);border-radius:4px;text-decoration:none;font-weight:600;font-size:0.88rem;">Study details</a>
+                            <a class="action-outline" href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>">Study details</a>
                             <span style="color:#6c757d;">No-show</span>
                         <?php elseif ($pstat === 'pending'): ?>
-                            <a href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>" style="display:inline-block;margin-right:8px;padding:6px 12px;background:#fff;color:var(--cnu-blue);border:1px solid var(--cnu-blue);border-radius:4px;text-decoration:none;font-weight:600;font-size:0.88rem;">Study details</a>
+                            <a class="action-outline" href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>">Study details</a>
                             <input type="hidden" name="action" value="cancel">
-                            <input type="submit" value="Cancel">
+                            <input class="action-outline" type="submit" value="Cancel">
                         <?php else: ?>
                             <input type="hidden" name="action" value="signup">
                             <input type="submit" value="Sign Up">

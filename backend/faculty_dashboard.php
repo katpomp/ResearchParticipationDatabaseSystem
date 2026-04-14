@@ -1,6 +1,7 @@
 <?php
 session_start();
 include "db_connect.php";
+require_once __DIR__ . '/inperson_session_schema.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'faculty') {
     header("Location: login.php");
@@ -8,6 +9,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'faculty') {
 }
 
 $facultyID = $_SESSION['user_id'];
+sona_ensure_inperson_session_columns($conn);
 
 // Fetch all studies
 $studies = [];
@@ -31,6 +33,29 @@ while ($row = $res->fetch_assoc()) {
 $events = [];
 foreach ($studies as $study) {
     $events[] = ['title'=>$study['StudyTitle'], 'start'=>$study['StartDate']];
+}
+$slotRes = $conn->query("
+    SELECT ips.StudyID, ips.SessionDate, ips.SessionTime, ips.StudentID, s.StudyTitle
+    FROM InPersonSession ips
+    INNER JOIN Study s ON s.StudyID = ips.StudyID
+    WHERE ips.SessionDate IS NOT NULL
+    ORDER BY ips.SessionDate ASC, ips.SessionTime ASC, ips.SessionID ASC
+");
+if ($slotRes) {
+    while ($slot = $slotRes->fetch_assoc()) {
+        $start = sona_inperson_slot_start_iso($slot['SessionDate'] ?? null, $slot['SessionTime'] ?? null);
+        if ($start === null) {
+            continue;
+        }
+        $claimed = !empty($slot['StudentID']) && (int)$slot['StudentID'] > 0;
+        $events[] = [
+            'title' => ($claimed ? 'Claimed slot: ' : 'Open slot: ') . $slot['StudyTitle'],
+            'start' => $start,
+            'url' => 'faculty_studies.php',
+            'backgroundColor' => $claimed ? '#1f6fb2' : '#64748b',
+            'borderColor' => $claimed ? '#155a90' : '#475569',
+        ];
+    }
 }
 $events_json = json_encode($events);
 ?>

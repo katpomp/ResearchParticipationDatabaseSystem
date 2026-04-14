@@ -52,9 +52,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $researcherProfileID !== null) {
     } elseif ($error === '') {
         $building = trim($_POST['building_name'] ?? '');
         $room = trim($_POST['room_number'] ?? '');
-        if ($building === '' || $room === '') {
-            $error = "Building name and room number are required for in-person studies.";
-        }
     }
 
     if ($error === '') {
@@ -189,7 +186,7 @@ input[type="submit"]:hover { background:#002244; }
                     <div id="block_inperson" class="session-block">
                         <label for="building_name">Building name</label>
                         <input id="building_name" type="text" name="building_name" placeholder="e.g. Luter Hall">
-                        <span class="hint-sm">Students will see this after they sign up.</span>
+                        <span class="hint-sm">Optional default location for this study. Time slots can set their own location.</span>
                         <label for="room_number">Room number</label>
                         <input id="room_number" type="text" name="room_number" placeholder="e.g. 201">
                     </div>
@@ -220,8 +217,8 @@ input[type="submit"]:hover { background:#002244; }
         var online = rOn && rOn.checked;
         if (bIn) bIn.hidden = online;
         if (bOn) bOn.hidden = !online;
-        if (building) building.required = !online;
-        if (room) room.required = !online;
+        if (building) building.required = false;
+        if (room) room.required = false;
         if (url) url.required = online;
     }
     if (rIn) rIn.addEventListener('change', sync);

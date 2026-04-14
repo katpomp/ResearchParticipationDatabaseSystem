@@ -20,11 +20,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'];
 
     if ($action === 'signup') {
+        // In-person studies require selecting a time slot first.
+        $modeStmt = $conn->prepare("SELECT SessionMode FROM Study WHERE StudyID=? LIMIT 1");
+        $sessionMode = 'in_person';
+        if ($modeStmt) {
+            $modeStmt->bind_param("i", $studyID);
+            $modeStmt->execute();
+            if ($m = $modeStmt->get_result()->fetch_assoc()) {
+                $sessionMode = (($m['SessionMode'] ?? 'in_person') === 'online') ? 'online' : 'in_person';
+            }
+        }
+        if ($sessionMode !== 'online') {
+            $_SESSION['signup_study_flash'] = "This is an in-person study. Please choose a time slot to sign up.";
+            header("Location: student_study_detail.php?studyID=" . (int)$studyID);
+            exit();
+        }
         $stmt = $conn->prepare("INSERT INTO StudyParticipant (StudyID, StudentID) VALUES (?, ?)");
         $stmt->bind_param("ii", $studyID, $studentID);
         if ($stmt->execute()) {
             require_once __DIR__ . '/study_signup_notifications.php';
-            $mailResult = sona_notify_study_signup($conn, $studyID, $studentID);
+            $mailResult = sona_notify_study_signup($conn, $studyID, $studentID, null);
             $flash = "Successfully signed up for study.";
             if (!empty($mailResult['student_send_failed'])) {
                 $flash .= " We could not send a confirmation email; your sign-up is still saved.";
@@ -271,8 +286,7 @@ form input[type="submit"]:hover { background:#002244; }
                     <div class="my-list">
                         <?php foreach($myUpcoming as $study): ?>
                             <a class="my-chip" href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>">
-                                <?php echo htmlspecialchars($study['StudyTitle']); ?> -
-                                <?php echo htmlspecialchars(date('M j, Y', strtotime($study['StartDate']))); ?>
+                                <?php echo htmlspecialchars($study['StudyTitle']); ?>
                             </a>
                         <?php endforeach; ?>
                     </div>
@@ -295,12 +309,6 @@ form input[type="submit"]:hover { background:#002244; }
                                     ?>
                                     <span class="status-badge"><?php echo htmlspecialchars($plabel); ?></span>
                                 </div>
-                                <div class="study-date">
-                                    <?php echo htmlspecialchars(date('M j, Y', strtotime($study['StartDate']))); ?>
-                                    <?php if (!empty($study['EndDate'])): ?>
-                                        - <?php echo htmlspecialchars(date('M j, Y', strtotime($study['EndDate']))); ?>
-                                    <?php endif; ?>
-                                </div>
                                 <div class="study-description"><?php echo htmlspecialchars($study['Description'] ?? ''); ?></div>
                             </div>
                         <?php endforeach; ?>
@@ -319,13 +327,7 @@ form input[type="submit"]:hover { background:#002244; }
                         <div class="study-card">
                             <div class="study-header">
                                 <div class="study-title"><?php echo htmlspecialchars($study['StudyTitle']); ?></div>
-                                <span class="status-badge"><?php echo htmlspecialchars($study['Status'] ?? 'Open'); ?></span>
-                            </div>
-                            <div class="study-date">
-                                <?php echo htmlspecialchars(date('M j, Y', strtotime($study['StartDate']))); ?>
-                                <?php if (!empty($study['EndDate'])): ?>
-                                    - <?php echo htmlspecialchars(date('M j, Y', strtotime($study['EndDate']))); ?>
-                                <?php endif; ?>
+                                <span class="status-badge"><?php echo htmlspecialchars((($participationByStudy[$study['StudyID']] ?? null) === 'pending') ? 'Signed Up' : ($study['Status'] ?? 'Open')); ?></span>
                             </div>
                             <div class="study-description"><?php echo htmlspecialchars($study['Description'] ?? ''); ?></div>
 
@@ -341,9 +343,7 @@ form input[type="submit"]:hover { background:#002244; }
                                     <a class="detail-link" href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>">Study details</a><br>
                                     <span class="empty-note" style="font-style:normal;">Recorded as no-show</span>
                                 <?php elseif ($pstat === 'pending'): ?>
-                                    <a class="detail-link" href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>">Study details (location / link)</a><br>
-                                    <input type="hidden" name="action" value="cancel">
-                                    <input type="submit" value="Cancel Signup">
+                                    <a class="detail-link" href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>">Study details</a>
                                 <?php else: ?>
                                     <input type="hidden" name="action" value="signup">
                                     <input type="submit" value="Sign Up">

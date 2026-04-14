@@ -1,6 +1,7 @@
 <?php
 session_start();
 include "db_connect.php";
+require_once __DIR__ . '/inperson_session_schema.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'researcher') {
     header("Location: login.php");
@@ -9,6 +10,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'researcher') {
 
 $userID = $_SESSION['user_id'];
 $message = '';
+sona_ensure_inperson_session_columns($conn);
 
 // Map logged in user to ResearcherID used by Study table
 $researcherProfileID = null;
@@ -36,6 +38,35 @@ if ($researcherProfileID !== null) {
 $events = [];
 foreach($studies as $study){
     $events[] = ['title'=>$study['StudyTitle'], 'start'=>$study['StartDate']];
+}
+if ($researcherProfileID !== null) {
+    $slotStmt = $conn->prepare("
+        SELECT s.StudyID, s.StudyTitle, ips.SessionDate, ips.SessionTime, ips.StudentID
+        FROM InPersonSession ips
+        INNER JOIN Study s ON s.StudyID = ips.StudyID
+        WHERE ips.ResearcherID = ?
+          AND ips.SessionDate IS NOT NULL
+        ORDER BY ips.SessionDate ASC, ips.SessionTime ASC, ips.SessionID ASC
+    ");
+    if ($slotStmt) {
+        $slotStmt->bind_param("i", $researcherProfileID);
+        $slotStmt->execute();
+        $slotRes = $slotStmt->get_result();
+        while ($slot = $slotRes->fetch_assoc()) {
+            $start = sona_inperson_slot_start_iso($slot['SessionDate'] ?? null, $slot['SessionTime'] ?? null);
+            if ($start === null) {
+                continue;
+            }
+            $claimed = !empty($slot['StudentID']) && (int)$slot['StudentID'] > 0;
+            $events[] = [
+                'title' => ($claimed ? 'Claimed slot: ' : 'Open slot: ') . $slot['StudyTitle'],
+                'start' => $start,
+                'url' => 'researcher_inperson_sessions.php?studyID=' . (int)$slot['StudyID'],
+                'backgroundColor' => $claimed ? '#1f6fb2' : '#64748b',
+                'borderColor' => $claimed ? '#155a90' : '#475569',
+            ];
+        }
+    }
 }
 $events_json = json_encode($events);
 ?>

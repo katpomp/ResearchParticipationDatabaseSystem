@@ -23,11 +23,12 @@ function sona_format_mail_date(?string $date): string
 }
 
 /**
- * After a successful StudyParticipant insert: email student (.edu) and researcher.
+ * After a successful sign-up: email student (.edu) and researcher.
+ * For in-person studies, pass $inPersonSessionID to include the chosen time slot.
  *
  * @return array{student_sent:bool,researcher_sent:bool,student_skipped_non_edu:bool,student_send_failed:bool}
  */
-function sona_notify_study_signup(mysqli $conn, int $studyID, int $userId): array
+function sona_notify_study_signup(mysqli $conn, int $studyID, int $userId, ?int $inPersonSessionID = null): array
 {
     sona_ensure_study_session_columns($conn);
 
@@ -90,6 +91,38 @@ function sona_notify_study_signup(mysqli $conn, int $studyID, int $userId): arra
     $studyTitle = (string)$studyRow['StudyTitle'];
     $startFmt = sona_format_mail_date($studyRow['StartDate'] ?? null);
     $endFmt = sona_format_mail_date($studyRow['EndDate'] ?? null);
+    $sessionMode = ($studyRow['SessionMode'] ?? 'in_person') === 'online' ? 'online' : 'in_person';
+
+    $slotLine = '';
+    if ($sessionMode === 'in_person' && $inPersonSessionID !== null && $inPersonSessionID > 0) {
+        // Best-effort slot detail lookup. (Schema may vary; ignore if missing.)
+        $slotStmt = $conn->prepare("
+            SELECT SessionDate, SessionTime, BuildingName, RoomNumber
+            FROM InPersonSession
+            WHERE SessionID = ? AND StudyID = ?
+            LIMIT 1
+        ");
+        if ($slotStmt) {
+            $slotStmt->bind_param("ii", $inPersonSessionID, $studyID);
+            $slotStmt->execute();
+            if ($slot = $slotStmt->get_result()->fetch_assoc()) {
+                $d = sona_format_mail_date($slot['SessionDate'] ?? null);
+                $tRaw = $slot['SessionTime'] ?? null;
+                $t = '—';
+                if ($tRaw !== null && $tRaw !== '') {
+                    $ts = strtotime('1970-01-01 ' . $tRaw);
+                    $t = $ts ? date('g:i A', $ts) : (string)$tRaw;
+                }
+                $b = trim((string)($slot['BuildingName'] ?? ''));
+                $r = trim((string)($slot['RoomNumber'] ?? ''));
+                $loc = trim($b . ($b !== '' && $r !== '' ? ', ' : '') . $r);
+                $slotLine = "  Time slot:    {$d} at {$t}\n";
+                if ($loc !== '') {
+                    $slotLine .= "  Location:     {$loc}\n";
+                }
+            }
+        }
+    }
 
     $researcherEmail = trim((string)($studyRow['ResearcherEmail'] ?? ''));
     $researcherFirst = trim((string)($studyRow['ResearcherFirstName'] ?? ''));
@@ -110,7 +143,6 @@ function sona_notify_study_signup(mysqli $conn, int $studyID, int $userId): arra
         $body .= "  Study title:  {$studyTitle}\n";
         $body .= "  Start date:   {$startFmt}\n";
         $body .= "  End date:     {$endFmt}\n";
-        $sessionMode = $studyRow['SessionMode'] ?? 'in_person';
         if ($sessionMode === 'online') {
             $joinUrl = sona_safe_http_url_for_href($studyRow['OnlineMeetingURL'] ?? '');
             if ($joinUrl !== null) {
@@ -120,12 +152,16 @@ function sona_notify_study_signup(mysqli $conn, int $studyID, int $userId): arra
                 $body .= "  Session:      Online (open the Research Participation System for the meeting link)\n";
             }
         } else {
-            $b = trim((string)($studyRow['BuildingName'] ?? ''));
-            $r = trim((string)($studyRow['RoomNumber'] ?? ''));
             $body .= "  Session:      In person\n";
-            if ($b !== '' || $r !== '') {
-                $loc = $b . ($b !== '' && $r !== '' ? ', ' : '') . $r;
-                $body .= "  Location:     {$loc}\n";
+            if ($slotLine !== '') {
+                $body .= $slotLine;
+            } else {
+                $b = trim((string)($studyRow['BuildingName'] ?? ''));
+                $r = trim((string)($studyRow['RoomNumber'] ?? ''));
+                if ($b !== '' || $r !== '') {
+                    $loc = $b . ($b !== '' && $r !== '' ? ', ' : '') . $r;
+                    $body .= "  Location:     {$loc}\n";
+                }
             }
         }
         $body .= "\nPlease follow any instructions the researcher has provided and check the Research Participation System for updates.\n\n";

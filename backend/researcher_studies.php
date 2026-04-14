@@ -94,6 +94,8 @@ form input[type="submit"] { padding:6px 14px; background-color:var(--cnu-blue); 
 form input[type="submit"]:hover { background:#002244; }
 form.study-action a.attendance-link, form.study-action a.edit-link { display:inline-block; padding:6px 14px; background:#fff; color:var(--cnu-blue); border:1px solid var(--cnu-blue); border-radius:4px; text-decoration:none; font-weight:600; font-size:0.9rem; }
 form.study-action a.attendance-link:hover, form.study-action a.edit-link:hover { background:#f0f5fa; }
+form.study-action a.slots-link { display:inline-block; padding:6px 14px; background:#fff; color:var(--cnu-blue); border:1px solid var(--cnu-blue); border-radius:4px; text-decoration:none; font-weight:600; font-size:0.9rem; }
+form.study-action a.slots-link:hover { background:#f0f5fa; }
 .empty-note { color:#5a6673; font-style:italic; }
 </style>
 </head>
@@ -155,6 +157,9 @@ form.study-action a.attendance-link:hover, form.study-action a.edit-link:hover {
                     <div class="study-description"><?php echo htmlspecialchars($study['Description'] ?? ''); ?></div>
                     <form method="post" class="study-action">
                         <a class="edit-link" href="edit_study.php?studyID=<?php echo (int)$study['StudyID']; ?>">Edit study</a>
+                        <?php if ((($study['SessionMode'] ?? 'in_person') !== 'online')): ?>
+                            <a class="slots-link" href="researcher_inperson_sessions.php?studyID=<?php echo (int)$study['StudyID']; ?>">Time slots</a>
+                        <?php endif; ?>
                         <a class="attendance-link" href="researcher_study_attendance.php?studyID=<?php echo (int)$study['StudyID']; ?>">Attendance &amp; completion</a>
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="studyID" value="<?php echo $study['StudyID']; ?>">

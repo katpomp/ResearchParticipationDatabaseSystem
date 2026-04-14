@@ -3,6 +3,7 @@ session_start();
 include "db_connect.php";
 require_once __DIR__ . '/study_participation_schema.php';
 require_once __DIR__ . '/study_session_schema.php';
+require_once __DIR__ . '/inperson_session_schema.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'student') {
     header("Location: login.php");
@@ -12,6 +13,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'student') {
 $studentID = (int)$_SESSION['user_id'];
 sona_ensure_participation_status_columns($conn);
 sona_ensure_study_session_columns($conn);
+sona_ensure_inperson_session_columns($conn);
+$studentPk = sona_student_primary_key_for_user($conn, $studentID);
 
 $studyID = isset($_GET['studyID']) ? (int)$_GET['studyID'] : 0;
 $justSignedUp = isset($_GET['new']) && $_GET['new'] === '1';
@@ -32,22 +35,156 @@ if ($studyID <= 0) {
         SELECT s.StudyID, s.StudyTitle, s.Description, s.Status, s.StartDate, s.EndDate,
                s.SessionMode, s.OnlineMeetingURL, s.BuildingName, s.RoomNumber,
                sp.ParticipationStatus
-        FROM StudyParticipant sp
-        JOIN Study s ON s.StudyID = sp.StudyID
-        WHERE sp.StudentID = ? AND s.StudyID = ?
+        FROM Study s
+        LEFT JOIN StudyParticipant sp
+          ON sp.StudyID = s.StudyID AND sp.StudentID = ?
+        WHERE s.StudyID = ?
         LIMIT 1
     ");
     $stmt->bind_param("ii", $studentID, $studyID);
     $stmt->execute();
     $study = $stmt->get_result()->fetch_assoc();
     if (!$study) {
-        $error = 'You are not signed up for this study, or it could not be found.';
+        $error = 'Study not found.';
     }
 }
 
 $safeUrl = null;
 if ($study && (($study['SessionMode'] ?? '') === 'online')) {
     $safeUrl = sona_safe_http_url_for_href($study['OnlineMeetingURL'] ?? '');
+}
+
+// Handle in-person slot sign-up / cancel directly on this page.
+$mode = $study ? ((($study['SessionMode'] ?? 'in_person') === 'online') ? 'online' : 'in_person') : 'in_person';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $study && $error === '') {
+    $action = (string)($_POST['action'] ?? '');
+    if ($mode !== 'online' && $action === 'signup_slot') {
+        $sessionID = (int)($_POST['sessionID'] ?? 0);
+        if ($studentPk === null) {
+            $signupFlash = "Your student profile is missing. Please contact support or re-register.";
+        } elseif ($sessionID <= 0) {
+            $signupFlash = "Choose a valid time slot.";
+        } else {
+            $conn->begin_transaction();
+            try {
+                $claim = $conn->prepare("UPDATE InPersonSession SET StudentID=?, AttendanceStatus='pending' WHERE SessionID=? AND StudyID=? AND (StudentID IS NULL OR StudentID=0)");
+                $claim->bind_param("iii", $studentPk, $sessionID, $studyID);
+                $claim->execute();
+                if ($claim->affected_rows !== 1) {
+                    throw new Exception("slot_taken");
+                }
+
+                // Keep StudyParticipant as the canonical participation record.
+                $ins = $conn->prepare("INSERT INTO StudyParticipant (StudyID, StudentID) VALUES (?, ?) ON DUPLICATE KEY UPDATE StudyID=StudyID");
+                $ins->bind_param("ii", $studyID, $studentID);
+                $ins->execute();
+
+                $conn->commit();
+
+                require_once __DIR__ . '/study_signup_notifications.php';
+                $mailResult = sona_notify_study_signup($conn, $studyID, $studentID, $sessionID);
+                $flash = "Successfully signed up for a time slot.";
+                if (!empty($mailResult['student_send_failed'])) {
+                    $flash .= " We could not send a confirmation email; your sign-up is still saved.";
+                } elseif (!empty($mailResult['student_skipped_non_edu'])) {
+                    $flash .= " Add a .edu address on your profile if you want email confirmations.";
+                }
+                $_SESSION['signup_study_flash'] = $flash;
+                header("Location: student_study_detail.php?studyID=" . (int)$studyID . "&new=1");
+                exit();
+            } catch (Throwable $e) {
+                $conn->rollback();
+                $signupFlash = $e->getMessage() === 'slot_taken'
+                    ? "Sorry—someone just claimed that slot. Please pick another."
+                    : "Could not sign up for that slot. Please try again.";
+            }
+        }
+    } elseif ($mode !== 'online' && $action === 'cancel_slot') {
+        $sessionID = (int)($_POST['sessionID'] ?? 0);
+        if ($studentPk === null) {
+            $signupFlash = "Your student profile is missing. Please contact support.";
+        } elseif ($sessionID > 0) {
+            $conn->begin_transaction();
+            try {
+                $free = $conn->prepare("UPDATE InPersonSession SET StudentID=NULL, AttendanceStatus='open' WHERE SessionID=? AND StudyID=? AND StudentID=?");
+                $free->bind_param("iii", $sessionID, $studyID, $studentPk);
+                $free->execute();
+
+                $del = $conn->prepare("DELETE FROM StudyParticipant WHERE StudyID=? AND StudentID=? AND ParticipationStatus='pending'");
+                $del->bind_param("ii", $studyID, $studentID);
+                $del->execute();
+
+                $conn->commit();
+                $_SESSION['signup_study_flash'] = "Successfully cancelled your time slot.";
+                header("Location: student_study_detail.php?studyID=" . (int)$studyID);
+                exit();
+            } catch (Throwable $e) {
+                $conn->rollback();
+                $signupFlash = "Could not cancel that slot. Please try again.";
+            }
+        }
+    } elseif ($mode === 'online' && $action === 'signup_online') {
+        $stmt2 = $conn->prepare("INSERT INTO StudyParticipant (StudyID, StudentID) VALUES (?, ?)");
+        $stmt2->bind_param("ii", $studyID, $studentID);
+        if ($stmt2->execute()) {
+            require_once __DIR__ . '/study_signup_notifications.php';
+            $mailResult = sona_notify_study_signup($conn, $studyID, $studentID, null);
+            $flash = "Successfully signed up for study.";
+            if (!empty($mailResult['student_send_failed'])) {
+                $flash .= " We could not send a confirmation email; your sign-up is still saved.";
+            } elseif (!empty($mailResult['student_skipped_non_edu'])) {
+                $flash .= " Add a .edu address on your profile if you want email confirmations.";
+            }
+            $_SESSION['signup_study_flash'] = $flash;
+            header("Location: student_study_detail.php?studyID=" . (int)$studyID . "&new=1");
+            exit();
+        } else {
+            $signupFlash = "Could not sign up: " . $stmt2->error;
+        }
+    } elseif ($mode === 'online' && $action === 'cancel_online') {
+        $del = $conn->prepare("DELETE FROM StudyParticipant WHERE StudyID=? AND StudentID=? AND ParticipationStatus='pending'");
+        $del->bind_param("ii", $studyID, $studentID);
+        if ($del->execute()) {
+            $_SESSION['signup_study_flash'] = $del->affected_rows > 0
+                ? "Successfully cancelled your study sign-up."
+                : "You can only cancel a sign-up that is still pending.";
+            header("Location: student_study_detail.php?studyID=" . (int)$studyID);
+            exit();
+        } else {
+            $signupFlash = "Could not cancel your sign-up. Please try again.";
+        }
+    }
+}
+
+$mySlot = null;
+$availableSlots = [];
+if ($study && $error === '' && $mode !== 'online' && $studentPk !== null) {
+    $mine = $conn->prepare("
+        SELECT SessionID, SessionDate, SessionTime, Duration, BuildingName, RoomNumber
+        FROM InPersonSession
+        WHERE StudyID=? AND StudentID=?
+        ORDER BY SessionDate ASC, SessionTime ASC
+        LIMIT 1
+    ");
+    if ($mine) {
+        $mine->bind_param("ii", $studyID, $studentPk);
+        $mine->execute();
+        $mySlot = $mine->get_result()->fetch_assoc();
+    }
+    $avail = $conn->prepare("
+        SELECT SessionID, SessionDate, SessionTime, Duration, BuildingName, RoomNumber
+        FROM InPersonSession
+        WHERE StudyID=? AND (StudentID IS NULL OR StudentID=0) AND (SessionDate >= CURDATE() OR SessionDate IS NULL)
+        ORDER BY SessionDate ASC, SessionTime ASC, SessionID ASC
+    ");
+    if ($avail) {
+        $avail->bind_param("i", $studyID);
+        $avail->execute();
+        $res = $avail->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $availableSlots[] = $row;
+        }
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -124,6 +261,17 @@ h1 { margin:0 0 8px 0; color:var(--cnu-blue); font-family:'Crimson Pro', serif; 
 .back a { color:var(--cnu-blue); font-weight:600; text-decoration:none; }
 .back a:hover { text-decoration:underline; }
 .status-note { font-size:0.92rem; color:#5a6673; margin-top:12px; }
+.slots { margin-top:14px; }
+.slot-card { border:1px solid #d9dfe7; border-left:4px solid var(--cnu-blue); border-radius:10px; background:#fafbfd; padding:14px 16px; margin-top:10px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+.slot-main { display:flex; flex-direction:column; gap:3px; }
+.slot-title { font-weight:700; color:#1f2d3a; }
+.slot-sub { color:#4e5c69; font-size:0.92rem; }
+.slot-btn { display:inline-flex; align-items:center; justify-content:center; padding:10px 14px; border-radius:8px; font-weight:700; border:1px solid var(--cnu-blue); background:var(--cnu-blue); color:white; cursor:pointer; }
+.slot-btn:hover { background:#002244; border-color:#002244; }
+.slot-btn.secondary { background:white; color:var(--cnu-blue); }
+.slot-btn.secondary:hover { background:#f0f5fa; border-color:var(--cnu-blue); color:var(--cnu-blue); }
+.slot-btn.danger { background:#fff; border-color:#b42318; color:#b42318; }
+.slot-btn.danger:hover { background:#fde8e8; }
 </style>
 </head>
 <body>
@@ -165,17 +313,12 @@ h1 { margin:0 0 8px 0; color:var(--cnu-blue); font-family:'Crimson Pro', serif; 
             <h1><?php echo htmlspecialchars($study['StudyTitle']); ?></h1>
 
             <?php
-            $mode = $study['SessionMode'] ?? 'in_person';
             $modeLabel = $mode === 'online' ? 'Online session' : 'In-person session';
             ?>
             <span class="session-badge"><?php echo htmlspecialchars($modeLabel); ?></span>
 
             <div class="meta">
-                <strong>Start:</strong> <?php echo htmlspecialchars(date('l, F j, Y', strtotime($study['StartDate']))); ?>
-                <?php if (!empty($study['EndDate'])): ?>
-                    <br><strong>End:</strong> <?php echo htmlspecialchars(date('l, F j, Y', strtotime($study['EndDate']))); ?>
-                <?php endif; ?>
-                <br><strong>Status:</strong> <?php echo htmlspecialchars($study['Status'] ?? 'Open'); ?>
+                <strong>Status:</strong> <?php echo htmlspecialchars($study['Status'] ?? 'Open'); ?>
             </div>
 
             <?php if (trim((string)($study['Description'] ?? '')) !== ''): ?>
@@ -184,6 +327,13 @@ h1 { margin:0 0 8px 0; color:var(--cnu-blue); font-family:'Crimson Pro', serif; 
 
             <?php if ($mode === 'online'): ?>
                 <div class="section-title">Join this study</div>
+                <?php if (empty($study['ParticipationStatus'])): ?>
+                    <p>Sign up first to access study details and receive confirmations.</p>
+                    <form method="post" style="margin:10px 0 0 0;">
+                        <input type="hidden" name="action" value="signup_online">
+                        <button class="slot-btn" type="submit">Sign up for this study</button>
+                    </form>
+                <?php else: ?>
                 <?php if ($safeUrl !== null): ?>
                     <p>Open the link your researcher provided to take part (opens in a new tab).</p>
                     <a class="join-link" href="<?php echo htmlspecialchars($safeUrl); ?>" target="_blank" rel="noopener noreferrer">Open study link</a>
@@ -191,28 +341,79 @@ h1 { margin:0 0 8px 0; color:var(--cnu-blue); font-family:'Crimson Pro', serif; 
                 <?php else: ?>
                     <p class="status-note">Your researcher has not added a meeting link yet. Check back later or contact them.</p>
                 <?php endif; ?>
-            <?php else: ?>
-                <div class="section-title">Location</div>
-                <div class="location-box">
-                    <?php
-                    $b = trim((string)($study['BuildingName'] ?? ''));
-                    $r = trim((string)($study['RoomNumber'] ?? ''));
-                    ?>
-                    <?php if ($b !== '' || $r !== ''): ?>
-                        <?php if ($b !== ''): ?>
-                            <strong>Building:</strong> <?php echo htmlspecialchars($b); ?><br>
-                        <?php endif; ?>
-                        <?php if ($r !== ''): ?>
-                            <strong>Room:</strong> <?php echo htmlspecialchars($r); ?>
-                        <?php endif; ?>
-                    <?php else: ?>
-                        <span class="status-note" style="margin:0;">Location details have not been posted yet. Watch your email or contact the researcher.</span>
+                    <?php if (($study['ParticipationStatus'] ?? '') === 'pending'): ?>
+                        <form method="post" style="margin:12px 0 0 0;">
+                            <input type="hidden" name="action" value="cancel_online">
+                            <button class="slot-btn secondary" type="submit" onclick="return confirm('Cancel your sign-up for this study?');">Cancel sign-up</button>
+                        </form>
                     <?php endif; ?>
-                </div>
+                <?php endif; ?>
+            <?php else: ?>
+                <div class="section-title">Choose a time slot</div>
+                <p class="status-note" style="margin-top:0;">For in-person studies, you sign up by selecting one of the available time slots below.</p>
+
+                <?php if ($mySlot): ?>
+                    <?php
+                    $d = $mySlot['SessionDate'] ? date('l, F j, Y', strtotime($mySlot['SessionDate'])) : '—';
+                    $t = '—';
+                    if (!empty($mySlot['SessionTime'])) {
+                        $ts = strtotime('1970-01-01 ' . $mySlot['SessionTime']);
+                        $t = $ts ? date('g:i A', $ts) : (string)$mySlot['SessionTime'];
+                    }
+                    $b = trim((string)($mySlot['BuildingName'] ?? ''));
+                    $r = trim((string)($mySlot['RoomNumber'] ?? ''));
+                    $loc = trim($b . ($b !== '' && $r !== '' ? ', ' : '') . $r);
+                    ?>
+                    <div class="slot-card">
+                        <div class="slot-main">
+                            <div class="slot-title">Your slot: <?php echo htmlspecialchars($d . ' at ' . $t); ?></div>
+                            <div class="slot-sub"><?php echo htmlspecialchars($loc !== '' ? $loc : 'Location TBD'); ?></div>
+                        </div>
+                        <form method="post" style="margin:0;">
+                            <input type="hidden" name="action" value="cancel_slot">
+                            <input type="hidden" name="sessionID" value="<?php echo (int)$mySlot['SessionID']; ?>">
+                            <button class="slot-btn danger" type="submit" onclick="return confirm('Cancel your slot?');">Cancel slot</button>
+                        </form>
+                    </div>
+                <?php elseif (count($availableSlots) === 0): ?>
+                    <div class="location-box">
+                        <span class="status-note" style="margin:0;">No time slots are available yet. Check back later.</span>
+                    </div>
+                <?php else: ?>
+                    <div class="slots">
+                        <?php foreach ($availableSlots as $s): ?>
+                            <?php
+                            $d = $s['SessionDate'] ? date('l, F j, Y', strtotime($s['SessionDate'])) : '—';
+                            $t = '—';
+                            if (!empty($s['SessionTime'])) {
+                                $ts = strtotime('1970-01-01 ' . $s['SessionTime']);
+                                $t = $ts ? date('g:i A', $ts) : (string)$s['SessionTime'];
+                            }
+                            $b = trim((string)($s['BuildingName'] ?? ''));
+                            $r = trim((string)($s['RoomNumber'] ?? ''));
+                            $loc = trim($b . ($b !== '' && $r !== '' ? ', ' : '') . $r);
+                            ?>
+                            <div class="slot-card">
+                                <div class="slot-main">
+                                    <div class="slot-title"><?php echo htmlspecialchars($d . ' at ' . $t); ?></div>
+                                    <div class="slot-sub">
+                                        <?php echo htmlspecialchars($loc !== '' ? $loc : 'Location TBD'); ?>
+                                        <?php if (!empty($s['Duration'])): ?> · <?php echo htmlspecialchars((string)(int)$s['Duration']); ?> min<?php endif; ?>
+                                    </div>
+                                </div>
+                                <form method="post" style="margin:0;">
+                                    <input type="hidden" name="action" value="signup_slot">
+                                    <input type="hidden" name="sessionID" value="<?php echo (int)$s['SessionID']; ?>">
+                                    <button class="slot-btn" type="submit">Sign up</button>
+                                </form>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
             <?php endif; ?>
 
             <?php
-            $ps = $study['ParticipationStatus'] ?? 'pending';
+            $ps = $study['ParticipationStatus'] ?? '';
             if ($ps === 'pending'): ?>
                 <p class="status-note">Your participation is <strong>pending</strong> until the researcher confirms attendance.</p>
             <?php elseif ($ps === 'completed'): ?>
