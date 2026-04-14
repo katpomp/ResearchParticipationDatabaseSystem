@@ -173,9 +173,6 @@ form input[type="submit"]:hover{background:#002244;}
             <a href="new_study.php" class="sidebar-header-link">Create New Study</a>
             <?php if($message) echo "<div class='message'>$message</div>"; ?>
             <p class="note">Create and publish a new study from the dedicated form page with cleaner fields and validation.</p>
-            <div class="study-action">
-                <a href="new_study.php" class="action-link">Open New Study Form</a>
-            </div>
         </div>
 
         <div class="panel studies-panel" id="your-studies">
