@@ -211,6 +211,7 @@ header {
     <div class="profile-dropdown">
         <a href="#"><?php echo htmlspecialchars($_SESSION['email']); ?></a>
         <div class="profile-dropdown-content">
+            <a href="redeem_role_code.php">Role invitation (code)</a>
             <a href="edit_profile.php">Edit Profile</a>
             <a href="change_password.php">Change Password</a>
             <a href="logout.php">Logout</a>

@@ -2,6 +2,7 @@
 session_start();
 include "db_connect.php";
 require_once __DIR__ . '/study_participation_schema.php';
+require_once __DIR__ . '/study_session_schema.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'student') {
     header("Location: login.php");
@@ -12,6 +13,7 @@ $studentID = $_SESSION['user_id'];
 $message = '';
 
 sona_ensure_participation_status_columns($conn);
+sona_ensure_study_session_columns($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $studyID = intval($_POST['studyID']);
@@ -23,12 +25,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($stmt->execute()) {
             require_once __DIR__ . '/study_signup_notifications.php';
             $mailResult = sona_notify_study_signup($conn, $studyID, $studentID);
-            $message = "Successfully signed up for study.";
+            $flash = "Successfully signed up for study.";
             if (!empty($mailResult['student_send_failed'])) {
-                $message .= " We could not send a confirmation email; your sign-up is still saved—check My Schedule on the site.";
+                $flash .= " We could not send a confirmation email; your sign-up is still saved.";
             } elseif (!empty($mailResult['student_skipped_non_edu'])) {
-                $message .= " Add a .edu address on your profile if you want email confirmations.";
+                $flash .= " Add a .edu address on your profile if you want email confirmations.";
             }
+            $_SESSION['signup_study_flash'] = $flash;
+            header("Location: student_study_detail.php?studyID=" . (int)$studyID . "&new=1");
+            exit();
         } else {
             $message = "Error: " . $stmt->error;
         }
@@ -184,6 +189,13 @@ header {
     background:#f8fbff;
     font-size:0.92rem;
 }
+a.my-chip { color:var(--cnu-blue); text-decoration:none; font-weight:600; }
+a.my-chip:hover { background:#eef4fc; }
+.detail-link {
+    display:inline-block; margin-top:6px; font-size:0.88rem; font-weight:600;
+    color:var(--cnu-blue); text-decoration:none;
+}
+.detail-link:hover { text-decoration:underline; }
 .study-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:14px; }
 .study-card {
     border:1px solid #d9dfe7;
@@ -236,6 +248,7 @@ form input[type="submit"]:hover { background:#002244; }
     <div class="profile-dropdown">
         <a href="#"><?php echo htmlspecialchars($_SESSION['email']); ?></a>
         <div class="profile-dropdown-content">
+            <a href="redeem_role_code.php">Role invitation (code)</a>
             <a href="edit_profile.php">Edit Profile</a>
             <a href="change_password.php">Change Password</a>
             <a href="logout.php">Logout</a>
@@ -257,10 +270,10 @@ form input[type="submit"]:hover { background:#002244; }
                 <?php else: ?>
                     <div class="my-list">
                         <?php foreach($myUpcoming as $study): ?>
-                            <div class="my-chip">
+                            <a class="my-chip" href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>">
                                 <?php echo htmlspecialchars($study['StudyTitle']); ?> -
                                 <?php echo htmlspecialchars(date('M j, Y', strtotime($study['StartDate']))); ?>
-                            </div>
+                            </a>
                         <?php endforeach; ?>
                     </div>
                 <?php endif; ?>
@@ -322,10 +335,13 @@ form input[type="submit"]:hover { background:#002244; }
                             <form method="post" class="study-action">
                                 <input type="hidden" name="studyID" value="<?php echo $study['StudyID']; ?>">
                                 <?php if ($pstat === 'completed'): ?>
+                                    <a class="detail-link" href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>">Study details</a><br>
                                     <span class="empty-note" style="font-style:normal;font-weight:600;color:#2f6f39;">Completed — credits recorded</span>
                                 <?php elseif ($pstat === 'no_show'): ?>
+                                    <a class="detail-link" href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>">Study details</a><br>
                                     <span class="empty-note" style="font-style:normal;">Recorded as no-show</span>
                                 <?php elseif ($pstat === 'pending'): ?>
+                                    <a class="detail-link" href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>">Study details (location / link)</a><br>
                                     <input type="hidden" name="action" value="cancel">
                                     <input type="submit" value="Cancel Signup">
                                 <?php else: ?>

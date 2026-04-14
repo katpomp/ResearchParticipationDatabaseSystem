@@ -23,6 +23,9 @@ function getDashboardByRole($role)
     if ($role === 'faculty') {
         return 'faculty_dashboard.php';
     }
+    if ($role === 'master') {
+        return 'master_dashboard.php';
+    }
     return 'login.php';
 }
 

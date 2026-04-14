@@ -1,6 +1,7 @@
 <?php
 session_start();
 include "db_connect.php";
+require_once __DIR__ . '/study_session_schema.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'researcher') {
     header("Location: login.php");
@@ -10,6 +11,8 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'researcher') {
 $userID = $_SESSION['user_id'];
 $message = '';
 $error = '';
+
+sona_ensure_study_session_columns($conn);
 
 $researcherProfileID = null;
 $researcherStmt = $conn->prepare("SELECT ResearcherID FROM Researcher WHERE UserID=? LIMIT 1");
@@ -28,13 +31,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $researcherProfileID !== null) {
     $status = trim($_POST['status'] ?? 'Open');
     $startDate = $_POST['startDate'] ?? '';
     $endDate = $_POST['endDate'] ?? '';
+    $sessionMode = $_POST['session_mode'] ?? 'in_person';
+    if (!in_array($sessionMode, ['online', 'in_person'], true)) {
+        $sessionMode = 'in_person';
+    }
 
     if ($title === '' || $startDate === '') {
         $error = "Study title and start date are required.";
-    } else {
+    }
+
+    $onlineUrl = null;
+    $building = null;
+    $room = null;
+
+    if ($error === '' && $sessionMode === 'online') {
+        $onlineUrl = sona_normalize_online_meeting_url($_POST['online_meeting_url'] ?? '');
+        if ($onlineUrl === null) {
+            $error = "Enter a valid http(s) URL for the online study (e.g. a Zoom or Teams link).";
+        }
+    } elseif ($error === '') {
+        $building = trim($_POST['building_name'] ?? '');
+        $room = trim($_POST['room_number'] ?? '');
+        if ($building === '' || $room === '') {
+            $error = "Building name and room number are required for in-person studies.";
+        }
+    }
+
+    if ($error === '') {
         $endDateParam = $endDate !== '' ? $endDate : null;
-        $stmt = $conn->prepare("INSERT INTO Study (StudyTitle, Description, Status, StartDate, EndDate, ResearcherID) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssssi", $title, $description, $status, $startDate, $endDateParam, $researcherProfileID);
+        $urlParam = $sessionMode === 'online' ? $onlineUrl : null;
+        $buildParam = $sessionMode === 'in_person' ? $building : null;
+        $roomParam = $sessionMode === 'in_person' ? $room : null;
+
+        $stmt = $conn->prepare("
+            INSERT INTO Study (StudyTitle, Description, Status, StartDate, EndDate, ResearcherID, SessionMode, OnlineMeetingURL, BuildingName, RoomNumber)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->bind_param(
+            "sssssissss",
+            $title,
+            $description,
+            $status,
+            $startDate,
+            $endDateParam,
+            $researcherProfileID,
+            $sessionMode,
+            $urlParam,
+            $buildParam,
+            $roomParam
+        );
         if ($stmt->execute()) {
             $message = "Study created successfully.";
         } else {
@@ -80,6 +125,13 @@ input[type="submit"]:hover { background:#002244; }
 .message { padding:10px; border-radius:6px; margin-bottom:12px; }
 .ok { background:#dff0d8; color:#3c763d; }
 .err { background:#f8d7da; color:#842029; }
+.session-fieldset { border:1px solid #cfd8e2; border-radius:8px; padding:12px 14px; margin-top:14px; background:#fff; }
+.session-fieldset legend { font-weight:700; color:#41505d; padding:0 6px; }
+.mode-row { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:10px; }
+.mode-row label { display:inline-flex; align-items:center; gap:8px; margin-top:0; font-weight:500; cursor:pointer; }
+.session-block { margin-top:8px; }
+.session-block[hidden] { display:none !important; }
+.hint-sm { font-size:0.88rem; color:#6b7280; font-weight:400; margin-top:4px; }
 </style>
 </head>
 <body>
@@ -128,6 +180,26 @@ input[type="submit"]:hover { background:#002244; }
                 <label for="endDate">End Date (optional)</label>
                 <input id="endDate" type="date" name="endDate">
 
+                <fieldset class="session-fieldset">
+                    <legend>Session format</legend>
+                    <div class="mode-row">
+                        <label><input type="radio" name="session_mode" value="in_person" checked id="mode_inperson"> In person</label>
+                        <label><input type="radio" name="session_mode" value="online" id="mode_online"> Online</label>
+                    </div>
+                    <div id="block_inperson" class="session-block">
+                        <label for="building_name">Building name</label>
+                        <input id="building_name" type="text" name="building_name" placeholder="e.g. Luter Hall">
+                        <span class="hint-sm">Students will see this after they sign up.</span>
+                        <label for="room_number">Room number</label>
+                        <input id="room_number" type="text" name="room_number" placeholder="e.g. 201">
+                    </div>
+                    <div id="block_online" class="session-block" hidden>
+                        <label for="online_meeting_url">Study / meeting URL</label>
+                        <input id="online_meeting_url" type="url" name="online_meeting_url" placeholder="https://...">
+                        <span class="hint-sm">Enter the link students will use to participate. Shown after sign-up.</span>
+                    </div>
+                </fieldset>
+
                 <div class="button-row">
                     <input type="submit" value="Create Study">
                 </div>
@@ -135,5 +207,27 @@ input[type="submit"]:hover { background:#002244; }
         </div>
     </div>
 </div>
+<script>
+(function () {
+    var rIn = document.getElementById('mode_inperson');
+    var rOn = document.getElementById('mode_online');
+    var bIn = document.getElementById('block_inperson');
+    var bOn = document.getElementById('block_online');
+    var building = document.getElementById('building_name');
+    var room = document.getElementById('room_number');
+    var url = document.getElementById('online_meeting_url');
+    function sync() {
+        var online = rOn && rOn.checked;
+        if (bIn) bIn.hidden = online;
+        if (bOn) bOn.hidden = !online;
+        if (building) building.required = !online;
+        if (room) room.required = !online;
+        if (url) url.required = online;
+    }
+    if (rIn) rIn.addEventListener('change', sync);
+    if (rOn) rOn.addEventListener('change', sync);
+    sync();
+})();
+</script>
 </body>
 </html>

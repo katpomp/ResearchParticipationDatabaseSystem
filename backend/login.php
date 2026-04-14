@@ -35,6 +35,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     header("Location: researcher_dashboard.php");
                 } elseif ($user['role'] == 'faculty') {
                     header("Location: faculty_dashboard.php");
+                } elseif ($user['role'] == 'master') {
+                    header("Location: master_dashboard.php");
                 } else {
                     header("Location: dashboard.php");
                 }

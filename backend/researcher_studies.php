@@ -2,6 +2,7 @@
 session_start();
 include "db_connect.php";
 require_once __DIR__ . '/study_participation_schema.php';
+require_once __DIR__ . '/study_session_schema.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'researcher') {
     header("Location: login.php");
@@ -24,6 +25,7 @@ if ($researcherRow = $researcherRes->fetch_assoc()) {
 }
 
 sona_ensure_participation_status_columns($conn);
+sona_ensure_study_session_columns($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $researcherProfileID !== null) {
     $action = $_POST['action'];
@@ -42,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $researc
 
 $studies = [];
 if ($researcherProfileID !== null) {
-    $stmt = $conn->prepare("SELECT StudyID, StudyTitle, Description, Status, StartDate, EndDate FROM Study WHERE ResearcherID=? ORDER BY StartDate ASC");
+    $stmt = $conn->prepare("SELECT StudyID, StudyTitle, Description, Status, StartDate, EndDate, SessionMode, OnlineMeetingURL, BuildingName, RoomNumber FROM Study WHERE ResearcherID=? ORDER BY StartDate ASC");
     $stmt->bind_param("i", $researcherProfileID);
     $stmt->execute();
     $res = $stmt->get_result();
@@ -90,8 +92,8 @@ header { background:linear-gradient(90deg, #002b55 0%, var(--cnu-blue) 100%); pa
 form.study-action { text-align:center; margin-top:8px; display:flex; flex-wrap:wrap; gap:10px; justify-content:center; align-items:center; }
 form input[type="submit"] { padding:6px 14px; background-color:var(--cnu-blue); color:white; border:none; border-radius:4px; cursor:pointer; }
 form input[type="submit"]:hover { background:#002244; }
-form.study-action a.attendance-link { display:inline-block; padding:6px 14px; background:#fff; color:var(--cnu-blue); border:1px solid var(--cnu-blue); border-radius:4px; text-decoration:none; font-weight:600; font-size:0.9rem; }
-form.study-action a.attendance-link:hover { background:#f0f5fa; }
+form.study-action a.attendance-link, form.study-action a.edit-link { display:inline-block; padding:6px 14px; background:#fff; color:var(--cnu-blue); border:1px solid var(--cnu-blue); border-radius:4px; text-decoration:none; font-weight:600; font-size:0.9rem; }
+form.study-action a.attendance-link:hover, form.study-action a.edit-link:hover { background:#f0f5fa; }
 .empty-note { color:#5a6673; font-style:italic; }
 </style>
 </head>
@@ -131,11 +133,28 @@ form.study-action a.attendance-link:hover { background:#f0f5fa; }
                         <span class="study-date"><?php echo htmlspecialchars(date('M j, Y', strtotime($study['StartDate']))); ?></span>
                     </div>
                     <div class="meta">Status: <?php echo htmlspecialchars($study['Status'] ?? 'Open'); ?></div>
+                    <?php
+                    $sm = ($study['SessionMode'] ?? 'in_person') === 'online' ? 'online' : 'in_person';
+                    if ($sm === 'online') {
+                        $hasLink = trim((string)($study['OnlineMeetingURL'] ?? '')) !== '';
+                        echo '<div class="meta">Format: <strong>Online</strong>' . ($hasLink ? ' · meeting link set' : ' · add URL in Edit') . '</div>';
+                    } else {
+                        $b = trim((string)($study['BuildingName'] ?? ''));
+                        $r = trim((string)($study['RoomNumber'] ?? ''));
+                        $loc = trim($b . ($b !== '' && $r !== '' ? ', ' : '') . $r);
+                        echo '<div class="meta">Format: <strong>In person</strong>';
+                        if ($loc !== '') {
+                            echo ' · ' . htmlspecialchars($loc);
+                        }
+                        echo '</div>';
+                    }
+                    ?>
                     <?php if (!empty($study['EndDate'])): ?>
                         <div class="meta">End Date: <?php echo htmlspecialchars(date('M j, Y', strtotime($study['EndDate']))); ?></div>
                     <?php endif; ?>
                     <div class="study-description"><?php echo htmlspecialchars($study['Description'] ?? ''); ?></div>
                     <form method="post" class="study-action">
+                        <a class="edit-link" href="edit_study.php?studyID=<?php echo (int)$study['StudyID']; ?>">Edit study</a>
                         <a class="attendance-link" href="researcher_study_attendance.php?studyID=<?php echo (int)$study['StudyID']; ?>">Attendance &amp; completion</a>
                         <input type="hidden" name="action" value="delete">
                         <input type="hidden" name="studyID" value="<?php echo $study['StudyID']; ?>">

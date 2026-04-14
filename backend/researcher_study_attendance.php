@@ -261,6 +261,9 @@ header { background:linear-gradient(90deg, #002b55 0%, var(--cnu-blue) 100%); pa
 </div>
 <div class="container">
     <a class="back-link" href="researcher_studies.php">&larr; Back to Your Studies</a>
+    <?php if ($study !== null): ?>
+        <a class="back-link" href="edit_study.php?studyID=<?php echo (int)$study['StudyID']; ?>" style="margin-left:1rem;">Edit study details</a>
+    <?php endif; ?>
 
     <?php if ($study === null && $studyID <= 0): ?>
         <div class="panel">

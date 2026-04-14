@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/inc_smtp.php';
+require_once __DIR__ . '/study_session_schema.php';
 
 function sona_mail_standard_banner(): string
 {
@@ -28,6 +29,8 @@ function sona_format_mail_date(?string $date): string
  */
 function sona_notify_study_signup(mysqli $conn, int $studyID, int $userId): array
 {
+    sona_ensure_study_session_columns($conn);
+
     $result = [
         'student_sent' => false,
         'researcher_sent' => false,
@@ -37,6 +40,7 @@ function sona_notify_study_signup(mysqli $conn, int $studyID, int $userId): arra
 
     $studyStmt = $conn->prepare("
         SELECT s.StudyTitle, s.StartDate, s.EndDate, s.ResearcherID,
+               s.SessionMode, s.OnlineMeetingURL, s.BuildingName, s.RoomNumber,
                r.FirstName AS ResearcherFirstName, r.LastName AS ResearcherLastName, r.Email AS ResearcherEmail
         FROM Study s
         LEFT JOIN Researcher r ON r.ResearcherID = s.ResearcherID
@@ -105,8 +109,26 @@ function sona_notify_study_signup(mysqli $conn, int $studyID, int $userId): arra
         $body .= "This confirms that you have successfully signed up for the following study:\n\n";
         $body .= "  Study title:  {$studyTitle}\n";
         $body .= "  Start date:   {$startFmt}\n";
-        $body .= "  End date:     {$endFmt}\n\n";
-        $body .= "Please follow any instructions the researcher has provided and check the Research Participation System for updates.\n\n";
+        $body .= "  End date:     {$endFmt}\n";
+        $sessionMode = $studyRow['SessionMode'] ?? 'in_person';
+        if ($sessionMode === 'online') {
+            $joinUrl = sona_safe_http_url_for_href($studyRow['OnlineMeetingURL'] ?? '');
+            if ($joinUrl !== null) {
+                $body .= "  Session:      Online\n";
+                $body .= "  Join link:    {$joinUrl}\n";
+            } else {
+                $body .= "  Session:      Online (open the Research Participation System for the meeting link)\n";
+            }
+        } else {
+            $b = trim((string)($studyRow['BuildingName'] ?? ''));
+            $r = trim((string)($studyRow['RoomNumber'] ?? ''));
+            $body .= "  Session:      In person\n";
+            if ($b !== '' || $r !== '') {
+                $loc = $b . ($b !== '' && $r !== '' ? ', ' : '') . $r;
+                $body .= "  Location:     {$loc}\n";
+            }
+        }
+        $body .= "\nPlease follow any instructions the researcher has provided and check the Research Participation System for updates.\n\n";
         $body .= "If you did not sign up for this study, sign in to the system to cancel or contact support.\n";
         $body .= sona_mail_standard_footer();
 

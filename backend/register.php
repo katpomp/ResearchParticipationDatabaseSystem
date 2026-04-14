@@ -3,7 +3,8 @@ session_start();
 include "db_connect.php";
 require_once __DIR__ . "/inc_smtp.php";
 
-$isFacultyCreator = isset($_SESSION['user_id']) && (($_SESSION['role'] ?? '') === 'faculty');
+$isFacultyCreator = isset($_SESSION['user_id'])
+    && in_array($_SESSION['role'] ?? '', ['faculty', 'master'], true);
 $reg_error = '';
 $reg_success = '';
 
@@ -257,7 +258,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         <div class="register-card">
             <h2>Create Account</h2>
             <?php if ($isFacultyCreator): ?>
-                <p class="subtitle">Faculty account creation mode.</p>
+                <p class="subtitle">Staff account creation mode (new accounts register as students).</p>
             <?php endif; ?>
 
             <?php if ($reg_error !== ''): ?>
@@ -301,7 +302,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
             <div class="footer-links">
                 <?php if ($isFacultyCreator): ?>
-                    <a href="faculty_dashboard.php">Back to Faculty Dashboard</a>
+                    <a href="<?php echo htmlspecialchars(($_SESSION['role'] ?? '') === 'master' ? 'master_dashboard.php' : 'faculty_dashboard.php'); ?>">Back to dashboard</a>
                 <?php else: ?>
                     Already have an account? <a href="login.php">Login here</a>
                 <?php endif; ?>

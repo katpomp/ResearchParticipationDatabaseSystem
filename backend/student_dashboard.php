@@ -2,6 +2,7 @@
 session_start();
 include "db_connect.php";
 require_once __DIR__ . '/study_participation_schema.php';
+require_once __DIR__ . '/study_session_schema.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'student') {
     header("Location: login.php");
@@ -12,6 +13,7 @@ $studentID = $_SESSION['user_id'];
 $message = '';
 
 sona_ensure_participation_status_columns($conn);
+sona_ensure_study_session_columns($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $studyID = intval($_POST['studyID']);
@@ -23,12 +25,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($stmt->execute()) {
             require_once __DIR__ . '/study_signup_notifications.php';
             $mailResult = sona_notify_study_signup($conn, $studyID, $studentID);
-            $message = "Successfully signed up for study.";
+            $flash = "Successfully signed up for study.";
             if (!empty($mailResult['student_send_failed'])) {
-                $message .= " We could not send a confirmation email; your sign-up is still saved—check My Schedule on the site.";
+                $flash .= " We could not send a confirmation email; your sign-up is still saved.";
             } elseif (!empty($mailResult['student_skipped_non_edu'])) {
-                $message .= " Add a .edu address on your profile if you want email confirmations.";
+                $flash .= " Add a .edu address on your profile if you want email confirmations.";
             }
+            $_SESSION['signup_study_flash'] = $flash;
+            header("Location: student_study_detail.php?studyID=" . (int)$studyID . "&new=1");
+            exit();
         } else {
             $message = "Error: " . $stmt->error;
         }
@@ -290,6 +295,7 @@ form input[type="submit"]:hover { background:#002244;}
     <div class="profile-dropdown">
         <a href="#"><?php echo htmlspecialchars($_SESSION['email']); ?></a>
         <div class="profile-dropdown-content">
+            <a href="redeem_role_code.php">Role invitation (code)</a>
             <a href="edit_profile.php">Edit Profile</a>
             <a href="change_password.php">Change Password</a>
             <a href="logout.php">Logout</a>
@@ -345,10 +351,13 @@ form input[type="submit"]:hover { background:#002244;}
                     <form method="post" class="study-action">
                         <input type="hidden" name="studyID" value="<?php echo $study['StudyID']; ?>">
                         <?php if ($pstat === 'completed'): ?>
+                            <a href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>" style="display:inline-block;margin-right:8px;padding:6px 12px;background:#fff;color:var(--cnu-blue);border:1px solid var(--cnu-blue);border-radius:4px;text-decoration:none;font-weight:600;font-size:0.88rem;">Study details</a>
                             <span style="font-weight:600;color:#2f6f39;">Completed</span>
                         <?php elseif ($pstat === 'no_show'): ?>
+                            <a href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>" style="display:inline-block;margin-right:8px;padding:6px 12px;background:#fff;color:var(--cnu-blue);border:1px solid var(--cnu-blue);border-radius:4px;text-decoration:none;font-weight:600;font-size:0.88rem;">Study details</a>
                             <span style="color:#6c757d;">No-show</span>
                         <?php elseif ($pstat === 'pending'): ?>
+                            <a href="student_study_detail.php?studyID=<?php echo (int)$study['StudyID']; ?>" style="display:inline-block;margin-right:8px;padding:6px 12px;background:#fff;color:var(--cnu-blue);border:1px solid var(--cnu-blue);border-radius:4px;text-decoration:none;font-weight:600;font-size:0.88rem;">Study details</a>
                             <input type="hidden" name="action" value="cancel">
                             <input type="submit" value="Cancel">
                         <?php else: ?>

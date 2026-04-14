@@ -1,6 +1,7 @@
 <?php
 session_start();
 include "db_connect.php";
+require_once __DIR__ . "/inc_role_promotion.php";
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] != 'faculty') {
     header("Location: login.php");
@@ -27,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $conn->begin_transaction();
         try {
             if ($fromRole === 'student') {
-                $sourceStmt = $conn->prepare("SELECT FirstName, LastName, Email FROM Student WHERE UserID = ? LIMIT 1");
+                $sourceStmt = $conn->prepare("SELECT StudentID, FirstName, LastName, Email FROM Student WHERE UserID = ? LIMIT 1");
                 $sourceStmt->bind_param("i", $userID);
                 $sourceStmt->execute();
                 $sourceRes = $sourceStmt->get_result();
@@ -36,6 +37,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (!$person) {
                     throw new Exception("Student record not found.");
                 }
+
+                sona_detach_student_dependent_rows($conn, (int)$person['StudentID']);
 
                 $insertStmt = $conn->prepare("INSERT INTO Researcher (FirstName, LastName, Email, UserID) VALUES (?, ?, ?, ?)");
                 $insertStmt->bind_param("sssi", $person['FirstName'], $person['LastName'], $person['Email'], $userID);

@@ -1,4 +1,6 @@
 -- USERS
+-- role: student | researcher | faculty | master | pending (if used)
+-- Bootstrap the first master with: UPDATE users SET role = 'master' WHERE email = 'admin@cnu.edu';
 CREATE TABLE users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     email VARCHAR(100) UNIQUE NOT NULL,
@@ -99,6 +101,10 @@ CREATE TABLE Study (
     StartDate DATE,
     EndDate DATE,
     ResearcherID INT,
+    SessionMode VARCHAR(20) NOT NULL DEFAULT 'in_person',
+    OnlineMeetingURL VARCHAR(1024) NULL,
+    BuildingName VARCHAR(100) NULL,
+    RoomNumber VARCHAR(20) NULL,
     FOREIGN KEY (ResearcherID) REFERENCES Researcher(ResearcherID)
 );
 
@@ -175,3 +181,21 @@ CREATE TABLE InPersonSession (
     FOREIGN KEY (BuildingName, RoomNumber)
         REFERENCES Location(BuildingName, RoomNumber)
 );
+
+
+-- ROLE PROMOTION (master emails 6-digit OTP; student redeems in app)
+-- Table is also created automatically by backend/inc_role_promotion.php if missing.
+CREATE TABLE RolePromotionToken (
+    TokenID INT AUTO_INCREMENT PRIMARY KEY,
+    UserID INT NOT NULL,
+    NewRole VARCHAR(20) NOT NULL,
+    CodeHash VARCHAR(255) NOT NULL,
+    ExpiresAt DATETIME NOT NULL,
+    CreatedByUserID INT NOT NULL,
+    CreatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UsedAt DATETIME NULL,
+    INDEX idx_user_active (UserID, UsedAt),
+    INDEX idx_expires (ExpiresAt),
+    FOREIGN KEY (UserID) REFERENCES users(id),
+    FOREIGN KEY (CreatedByUserID) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

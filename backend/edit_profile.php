@@ -1,6 +1,7 @@
 <?php
 session_start();
 include "db_connect.php";
+require_once __DIR__ . "/inc_role_promotion.php";
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
@@ -9,6 +10,10 @@ if (!isset($_SESSION['user_id'])) {
 
 $userID = $_SESSION['user_id'];
 $role = $_SESSION['role'] ?? '';
+
+if ($role === 'master') {
+    sona_ensure_master_faculty_profile($conn, $userID, $_SESSION['email'] ?? '');
+}
 $message = '';
 $error = '';
 
@@ -23,6 +28,9 @@ function getDashboardByRole($role)
     if ($role === 'faculty') {
         return 'faculty_dashboard.php';
     }
+    if ($role === 'master') {
+        return 'master_dashboard.php';
+    }
     return 'login.php';
 }
 
@@ -34,7 +42,7 @@ function getRoleTable($role)
     if ($role === 'researcher') {
         return 'Researcher';
     }
-    if ($role === 'faculty') {
+    if ($role === 'faculty' || $role === 'master') {
         return 'Faculty';
     }
     return '';
