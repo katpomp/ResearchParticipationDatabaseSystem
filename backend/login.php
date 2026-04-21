@@ -9,6 +9,8 @@ if (isset($_SESSION['user_id'])) {
 
 $loggedOut = isset($_GET['logged_out']) && $_GET['logged_out'] === '1';
 $pendingRequestSubmitted = isset($_GET['pending_request']) && $_GET['pending_request'] === '1';
+$loginBackground = 'IMG_6123.jpeg';
+$loginBackgroundVersion = file_exists(__DIR__ . '/' . $loginBackground) ? filemtime(__DIR__ . '/' . $loginBackground) : time();
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $email = trim($_POST['email'] ?? '');
@@ -70,15 +72,33 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             padding: 0;
             font-family: 'Inter', sans-serif;
             background-color: #1a2d45;
-            background-image: url('');
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-            background-attachment: fixed;
             color: var(--text-dark);
             display: flex;
             flex-direction: column;
             min-height: 100vh;
+            position: relative;
+            overflow: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: url('<?php echo htmlspecialchars($loginBackground . '?v=' . (string)$loginBackgroundVersion); ?>');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            filter: blur(5px);
+            transform: scale(1.03);
+            z-index: -2;
+        }
+
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.2);
+            z-index: -1;
         }
 
         header {
